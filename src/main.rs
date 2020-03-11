@@ -429,7 +429,7 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
 
     // Min after sorting, thus O(1) instead of O(n)
     let min_x:usize = ((combined[0].1).0).0;
-    let min_y:usize = ((combined[0].1).0).1;
+    let min_y:usize = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
     // Subtract mins from all bounds
     let origin_bounds:Vec<(char,((usize,usize),(usize,usize)))> = combined.iter().map(|(class,bounds)| (*class,(((bounds.0).0-min_x,(bounds.0).1-min_y),((bounds.1).0-min_x,(bounds.1).1-min_y)))).collect();
 
