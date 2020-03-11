@@ -421,8 +421,8 @@ fn segment(debug_out:bool,path:&Path) -> (Vec<ImageBuffer<Luma<u8>,Vec<u8>>>,Vec
 }
 fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,usize))>) -> String {
     // Find minimum bounds
-    let mut min_x = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).0 < min { (x.0).0 } else { min }));
-    let mut min_y = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
+    let min_x = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).0 < min { (x.0).0 } else { min }));
+    let min_y = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
 
     let combined:Vec<(char,((usize,usize),(usize,usize)))> = izip!(classes.iter(),bounds.iter()).map(|(class,bounds)| ((*class,*bounds))).collect();
 
