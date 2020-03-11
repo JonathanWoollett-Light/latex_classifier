@@ -421,18 +421,21 @@ fn segment(debug_out:bool,path:&Path) -> (Vec<ImageBuffer<Luma<u8>,Vec<u8>>>,Vec
 }
 fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,usize))>) -> String {
     // Find minimum bounds
-    let min_x = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).0 < min { (x.0).0 } else { min }));
-    let min_y = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
+    
 
-    let combined:Vec<(char,((usize,usize),(usize,usize)))> = izip!(classes.iter(),bounds.iter()).map(|(class,bounds)| ((*class,*bounds))).collect();
+    let mut combined:Vec<(char,((usize,usize),(usize,usize)))> = izip!(classes.iter(),bounds.iter()).map(|(class,bounds)| ((*class,*bounds))).collect();
 
+    combined.sort_by(|a,b| ((a.1).0).0.cmp(&((b.1).0).0));
 
+    // Min after sorting, thus O(1) instead of O(n)
+    let min_x:usize = ((combined[0].1).0).0;
+    let min_y:usize = ((combined[0].1).0).1;
     // Subtract mins from all bounds
-    let mut origin_bounds:Vec<(char,((usize,usize),(usize,usize)))> = combined.iter().map(|(class,bounds)| (*class,(((bounds.0).0-min_x,(bounds.0).1-min_y),((bounds.1).0-min_x,(bounds.1).1-min_y)))).collect();
+    let origin_bounds:Vec<(char,((usize,usize),(usize,usize)))> = combined.iter().map(|(class,bounds)| (*class,(((bounds.0).0-min_x,(bounds.0).1-min_y),((bounds.1).0-min_x,(bounds.1).1-min_y)))).collect();
 
     let avg_y = origin_bounds.iter().fold(0usize, |sum,x| (sum + ((x.1).0).1 + ((x.1).1).1)) / (2 * bounds.len());
 
-    origin_bounds.sort_by(|a,b| ((a.1).0).0.cmp(&((b.1).0).0));
+    
 
     let mut grid = vec!(vec!(None;origin_bounds.len());3);
 
