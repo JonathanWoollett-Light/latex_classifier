@@ -425,9 +425,10 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
 
     let mut combined:Vec<(char,((usize,usize),(usize,usize)))> = izip!(classes.iter(),bounds.iter()).map(|(class,bounds)| ((*class,*bounds))).collect();
 
+    // Sort by min x, ordering symbols horizontally
     combined.sort_by(|a,b| ((a.1).0).0.cmp(&((b.1).0).0));
 
-    // Min after sorting, thus O(1) instead of O(n)
+    // min_x after sorting, thus O(1) instead of O(n)
     let min_x:usize = ((combined[0].1).0).0;
     let min_y:usize = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
     // Subtract mins from all bounds
