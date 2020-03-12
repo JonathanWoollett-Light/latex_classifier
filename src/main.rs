@@ -14,16 +14,17 @@ use std::usize;
 const LUMA_ADJUSTMENT:u8 = 15u8; // Luma less than set to 0 and more than set to 255.
 const B_SPACING:usize = 20usize; // Border space
 const WHITE_SPACE_SYMBOL:char = ' '; // What symbol to use when priting white pixels
+const ROW_CLEARANCE:f32 = 0.5;
 
 fn main() {
     // train_net();
     // let net = NeuralNetwork::import("classifier");
 
 
-    let (images,bounds) = segment(true,Path::new("scripts.jpg"));
+    let (images,bounds) = segment(true,Path::new("composite.jpg"));
 
     // Placeholder
-    let classes:[char;11] = ['2','2','b','b','+','-','+','y','x','2','1'];
+    let classes:[char;15] = ['2','3','x','7','1','2','.','b','+','-','y','-','-','-','.'];
 
     let latex = construct(true,&classes,&bounds);
     println!("\nlatex: {}",latex);
@@ -420,29 +421,159 @@ fn segment(debug_out:bool,path:&Path) -> (Vec<ImageBuffer<Luma<u8>,Vec<u8>>>,Vec
     }
 }
 fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,usize))>) -> String {
+    #[derive(Default,Copy,Clone)]
+    struct point {
+        x:usize,
+        y:usize,
+    }
+    #[derive(Clone)]
+    struct symbol {
+        class:String,
+        bounds:(point,point)
+    }
+    struct row {
+        centre:usize,
+        sum:usize,
+        symbols:Vec<symbol>,
+    }
+    
     // Find minimum bounds
     
 
-    let mut combined:Vec<(char,((usize,usize),(usize,usize)))> = izip!(classes.iter(),bounds.iter()).map(|(class,bounds)| ((*class,*bounds))).collect();
+    let mut combined:Vec<symbol> = 
+        izip!(classes.iter(),bounds.iter())
+        .map(|(class,bounds)| 
+            symbol {
+                class: (*class).to_string(),
+                bounds: (point{x:(bounds.0).0,y:(bounds.0).1},point{x:(bounds.1).0,y:(bounds.1).1})
+            }
+        ).collect();
 
     // Sort by min x, ordering symbols horizontally
-    combined.sort_by(|a,b| ((a.1).0).0.cmp(&((b.1).0).0));
+    combined.sort_by(|a,b| ((a.bounds).0).x.cmp(&((b.bounds).0).x));
 
     // min_x after sorting, thus O(1) instead of O(n)
-    let min_x:usize = ((combined[0].1).0).0;
+    let min_x:usize = ((combined[0].bounds).0).x;
     let min_y:usize = bounds.iter().fold(usize::MAX, |min,x| (if (x.0).1 < min { (x.0).1 } else { min }));
     // Subtract mins from all bounds
-    let origin_bounds:Vec<(char,((usize,usize),(usize,usize)))> = combined.iter().map(|(class,bounds)| (*class,(((bounds.0).0-min_x,(bounds.0).1-min_y),((bounds.1).0-min_x,(bounds.1).1-min_y)))).collect();
+    for symbol in combined.iter_mut() {
+        symbol.bounds.0.x -= min_x;
+        symbol.bounds.0.y -= min_y;
+        symbol.bounds.1.x -= min_x;
+        symbol.bounds.1.y -= min_y;
+    }
 
-    let avg_y = origin_bounds.iter().fold(0usize, |sum,x| (sum + ((x.1).0).1 + ((x.1).1).1)) / (2 * bounds.len());
+    let avg_y = combined.iter().fold(0usize, |sum,s| (sum + (s.bounds.0).y + (s.bounds.1).y)) / (2 * bounds.len());
+
+    let y_centers:Vec<usize> = combined.iter().map(|s| ((s.bounds.0).y+(s.bounds.1).y)/2).collect();
+    let mut rows:Vec<row> = vec![row{
+        centre:y_centers[0],
+        sum:y_centers[0],
+        symbols:vec![combined[0].clone()]
+    }];
+    
+    for i in 1..y_centers.len() {
+        println!("symbol: {}",combined[i].class);
+        let mut new_row = true;
+        for t in 0..rows.len() {
+            // TODO Equations here could be done more efficiently, fix that.
+            println!("(1f32-({} as f32 / {} as f32)).abs() <= {} : {}",y_centers[i],rows[t].centre,ROW_CLEARANCE,(1f32-(y_centers[i] as f32 / rows[t].centre as f32)).abs());
+            printRow(&rows[t].symbols);
+            if (1f32-(y_centers[i] as f32 / rows[t].centre as f32)).abs() <= ROW_CLEARANCE {
+                rows[t].symbols.push(combined[i].clone());
+                rows[t].sum += y_centers[i];
+                rows[t].centre = rows[t].sum / rows[t].symbols.len();
+                new_row = false;
+                break;
+            }
+        }
+        if new_row {
+            rows.push(row{
+                centre:y_centers[i],
+                sum:y_centers[i],
+                symbols:vec![combined[i].clone()]
+            });
+            print!("row centres: [ ");
+            for row in rows.iter() {
+                print!("{} ",row.centre);
+            }
+            println!("]");
+        }
+    }
+
+    println!("rows:");
+    for row in rows.iter() {
+        printRow(&row.symbols);
+    }
+
+    // Construct composite symbols
+    for row in rows.iter_mut() {
+        let mut i = 0usize;
+        while i < row.symbols.len() {
+            if row.symbols[i].class == "-" {
+                if row.symbols[i+1].class == "-" {
+                    println!("{}/{}={}",row.symbols[i].bounds.0.x,row.symbols[i+1].bounds.0.x,row.symbols[i].bounds.0.x as f32 / row.symbols[i+1].bounds.0.x as f32);
+                    if (1f32 - row.symbols[i].bounds.0.x as f32 / row.symbols[i+1].bounds.0.x as f32).abs() <= 0.2f32 {
+                        row.symbols[i].class="=".to_string();
+                        printRow(&row.symbols);
+                        row.symbols[i].bounds = (
+                            point{x:min(row.symbols[i].0.x,row.symbols[i+1].0.x),y:min(row.symbols[i].0.y,row.symbols[i+1].0.y)},
+                            point{x:max(row.symbols[i].1.x,row.symbols[i+1].1.x),y:min(row.symbols[i].1.y,row.symbols[i+1].1.y)}
+                        );
+                        row.symbols.remove(i+1);
+                    }
+                }
+                else if row.symbols[i+1].class == "." && row.symbols[i+2].class == "." {
+                    if within_x(&row.symbols[i+1],&row.symbols[i]) && within_x(&row.symbols[i+2],&row.symbols[i]) {
+                        row.symbols[i].class = "/div".to_string(); // /div
+                        row.symbols.remove(i+1);
+                        row.symbols.remove(i+1); // After first remove now i+1 == prev i+2
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    println!("rows:");
+    for row in rows.iter() {
+        printRow(&row.symbols);
+    }
 
     
 
-    let mut grid = vec!(vec!(None;origin_bounds.len());3);
+    return "nothing".to_owned();
 
-    for (i,(class,bounds)) in origin_bounds.iter().enumerate() {
+    fn printRow(symbols:&Vec<symbol>) {
+        print!("[ ");
+        for symbol in symbols {
+            print!("{} ",symbol.class);
+        }
+        println!("]");
+    }
+    // If inner is within x bounds of outer
+    fn within_x(inner:&symbol,outer:&symbol) -> bool {
+        if inner.bounds.0.x > outer.bounds.0.x && inner.bounds.1.x < outer.bounds.1.x {
+            return true;
+        }
+        return false;
+    }
+    fn min(a:usize,b:usize) -> usize {
+        if a < b { return a; }
+        return b;
+    }
+    fn max(a:usize,b:usize) -> usize {
+        if a > b { return a; }
+        return b;
+    }
+
+    /*
+    let mut grid = vec!(vec!(None;combined.len());3);
+
+    for (i,(class,bounds)) in combined.iter().enumerate() {
         // y upper bound > average y -> superscript
         //println!("char:{},min_y:{},max_y:{}",class,(bounds.0).1,(bounds.1).1);
+        if 
         if (bounds.0).1 > avg_y { 
             grid[2][i] = Some(class);
         }
@@ -457,7 +588,7 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
     if debug_out { println!("grid:\n{:.?}",grid); }
 
     let mut latex:String = String::new();
-    for i in 0..origin_bounds.len() {
+    for i in 0..combined.len() {
         if let Some(superscript) = grid[0][i] {
             println!("^{}",superscript);
             latex.push_str(&format!("^{}",superscript));
@@ -473,4 +604,5 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
     }
 
     return latex;
+    */
 }
