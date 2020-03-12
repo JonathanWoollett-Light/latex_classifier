@@ -24,7 +24,7 @@ fn main() {
     let (images,bounds) = segment(true,Path::new("composite.jpg"));
 
     // Placeholder
-    let classes:[char;15] = ['2','3','x','7','1','2','.','b','+','-','y','-','-','-','.'];
+    let classes:[char;15] = ['3','2','x','7','1','2','.','b','+','-','y','-','-','-','.'];
 
     let latex = construct(true,&classes,&bounds);
     println!("\nlatex: {}",latex);
@@ -421,7 +421,7 @@ fn segment(debug_out:bool,path:&Path) -> (Vec<ImageBuffer<Luma<u8>,Vec<u8>>>,Vec
     }
 }
 fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,usize))>) -> String {
-    #[derive(Default,Copy,Clone)]
+    #[derive(Copy,Clone,Default)]
     struct point {
         x:usize,
         y:usize,
@@ -477,8 +477,8 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
         let mut new_row = true;
         for t in 0..rows.len() {
             // TODO Equations here could be done more efficiently, fix that.
-            println!("(1f32-({} as f32 / {} as f32)).abs() <= {} : {}",y_centers[i],rows[t].centre,ROW_CLEARANCE,(1f32-(y_centers[i] as f32 / rows[t].centre as f32)).abs());
-            printRow(&rows[t].symbols);
+            //println!("(1f32-({} as f32 / {} as f32)).abs() <= {} : {}",y_centers[i],rows[t].centre,ROW_CLEARANCE,(1f32-(y_centers[i] as f32 / rows[t].centre as f32)).abs());
+            //printRow(&rows[t].symbols);
             if (1f32-(y_centers[i] as f32 / rows[t].centre as f32)).abs() <= ROW_CLEARANCE {
                 rows[t].symbols.push(combined[i].clone());
                 rows[t].sum += y_centers[i];
@@ -512,20 +512,20 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
         while i < row.symbols.len() {
             if row.symbols[i].class == "-" {
                 if row.symbols[i+1].class == "-" {
-                    println!("{}/{}={}",row.symbols[i].bounds.0.x,row.symbols[i+1].bounds.0.x,row.symbols[i].bounds.0.x as f32 / row.symbols[i+1].bounds.0.x as f32);
+                    // println!("{}/{}={}",row.symbols[i].bounds.0.x,row.symbols[i+1].bounds.0.x,row.symbols[i].bounds.0.x as f32 / row.symbols[i+1].bounds.0.x as f32);
                     if (1f32 - row.symbols[i].bounds.0.x as f32 / row.symbols[i+1].bounds.0.x as f32).abs() <= 0.2f32 {
                         row.symbols[i].class="=".to_string();
-                        printRow(&row.symbols);
+                        // printRow(&row.symbols);
                         row.symbols[i].bounds = (
-                            point{x:min(row.symbols[i].0.x,row.symbols[i+1].0.x),y:min(row.symbols[i].0.y,row.symbols[i+1].0.y)},
-                            point{x:max(row.symbols[i].1.x,row.symbols[i+1].1.x),y:min(row.symbols[i].1.y,row.symbols[i+1].1.y)}
+                            point{x:min(row.symbols[i].bounds.0.x,row.symbols[i+1].bounds.0.x),y:min(row.symbols[i].bounds.0.y,row.symbols[i+1].bounds.0.y)},
+                            point{x:max(row.symbols[i].bounds.1.x,row.symbols[i+1].bounds.1.x),y:min(row.symbols[i].bounds.1.y,row.symbols[i+1].bounds.1.y)}
                         );
                         row.symbols.remove(i+1);
                     }
                 }
                 else if row.symbols[i+1].class == "." && row.symbols[i+2].class == "." {
                     if within_x(&row.symbols[i+1],&row.symbols[i]) && within_x(&row.symbols[i+2],&row.symbols[i]) {
-                        row.symbols[i].class = "/div".to_string(); // /div
+                        row.symbols[i].class = "\\div".to_string(); // /div
                         row.symbols.remove(i+1);
                         row.symbols.remove(i+1); // After first remove now i+1 == prev i+2
                     }
@@ -540,9 +540,81 @@ fn construct(debug_out:bool,classes:&[char],bounds:&Vec<((usize,usize),(usize,us
         printRow(&row.symbols);
     }
 
-    
+    // Sorts rows in vertical order rows[0] is bottom row
+    rows.sort_by(|a,b| (b.centre.cmp(&a.centre)));
 
-    return "nothing".to_owned();
+    let mut row_heights:Vec<usize> = vec!(0usize;rows.len());
+    for i in 0..rows.len() {
+        for symbol in rows[i].symbols.iter() {
+            row_heights[i] += symbol.bounds.1.y - symbol.bounds.0.y;
+        }
+        row_heights[i] /= rows[i].symbols.len();
+    }
+
+    let avg_height = row_heights.iter().fold(0usize,|sum,x| sum+x) / row_heights.len();
+
+    println!("vertically ordered rows:");
+    for row in rows.iter() {
+        printRow(&row.symbols);
+    }
+
+    // Boolean for each row noting if it is a subscript row
+    let mut subscripts:Vec<bool> = vec!(false;rows.len());
+    for i in 0..subscripts.len()-1 {
+        if row_heights[i] < row_heights[i+1] {
+            subscripts[i]=true;
+        }
+    }
+
+    enum RowChange { up,down,same }
+
+    let mut latex:String = String::new();
+    let mut first = true;
+
+    let mut old_row = usize::default();
+    let mut new_row = usize::default();
+    
+    loop {
+        println!("building: {}",latex);
+        let mut row_val = usize::MAX;
+        for i in 0..rows.len() {
+            if let Some(symbol) = rows[i].symbols.first() {
+                if symbol.bounds.0.x < row_val {
+                    row_val = symbol.bounds.0.x;
+                    new_row = i;
+                }
+            }
+        }
+
+        if row_val == usize::MAX { break; } // All rows empty.
+
+        // TODO Move this stuff outside loop
+        if first { old_row = new_row; first=false; latex.push_str("{");  }
+
+        let row_change:RowChange = 
+            if new_row > old_row { RowChange::up }
+            else if new_row < old_row { RowChange::down }
+            else { RowChange::same };
+
+        match row_change {
+            RowChange::up => { 
+                latex.push_str("}"); 
+                if row_heights[new_row] < row_heights[old_row] { latex.push_str("^"); }
+                latex.push_str("{");
+            }
+            RowChange::down => { 
+                latex.push_str("}"); 
+                if row_heights[new_row] < row_heights[old_row] { latex.push_str("_"); }
+                latex.push_str("{");
+            }
+            RowChange::same => {}
+        }
+        latex.push_str(&rows[new_row].symbols[0].class);
+        rows[new_row].symbols.remove(0); // TODO If we are using `.remove(0)` maybe we should use a queue (`VecDeque`)?
+        old_row = new_row;
+    }
+
+    return latex;
 
     fn printRow(symbols:&Vec<symbol>) {
         print!("[ ");
