@@ -72,12 +72,13 @@ dependencies = [
 
 [[package]]
 name = "cogent"
-version = "0.2.1"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97e10cc57db5dac70472dd5f73dd834c7bd020701a1839fedbfe6c2d7dfb1eae"
+checksum = "07f6c7b8421b6462d1f5d8b574dc2c5696e9008078ece1d62f2d058934430549"
 dependencies = [
  "arrayfire",
  "crossterm",
+ "itertools 0.9.0",
  "rand",
  "serde",
  "serde_json",
@@ -283,6 +284,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -312,9 +322,12 @@ dependencies = [
 name = "latex_classifier"
 version = "0.1.0"
 dependencies = [
+ "arrayfire",
  "cogent",
  "image",
- "itertools",
+ "itertools 0.8.2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
