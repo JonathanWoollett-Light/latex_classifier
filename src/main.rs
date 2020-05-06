@@ -22,28 +22,25 @@ const ROW_CLEARANCE:f32 = 0.3f32;
 const COVERED_PIXEL:u8 = 2u8; // Can be any u8 value, as long as not 
 
 fn main() {
-    println!("\n\ncheck 1\n\n");
-
-    
     // Runs segmentation
     // -----------------
     let segment_1 = segment(true,"1.jpg");
-    let segment_2 = segment(true,"2.jpg");
-    let segment_3 = segment(true,"3.jpg");
-    let segment_4 = segment(true,"4.jpg");
-    let segment_5 = segment(true,"5.jpg");
-    let segment_6 = segment(true,"6.jpg");
-    let segment_7 = segment(true,"7.jpg");
-    let segment_8 = segment(true,"8.jpg");
-    let segment_9 = segment(true,"9.jpg");
-    let segment_10 = segment(true,"10.jpg");
-    let segment_11 = segment(true,"11.jpg");
-    let segment_12 = segment(true,"12.jpg");
-    let segment_13 = segment(true,"13.jpg");
-    let segment_14 = segment(true,"14.jpg");
-    let segment_15 = segment(true,"15.jpg");
+    let segment_2 = segment(false,"2.jpg");
+    let segment_3 = segment(false,"3.jpg");
+    let segment_4 = segment(false,"4.jpg");
+    let segment_5 = segment(false,"5.jpg");
+    let segment_6 = segment(false,"6.jpg");
+    let segment_7 = segment(false,"7.jpg");
+    let segment_8 = segment(false,"8.jpg");
+    let segment_9 = segment(false,"9.jpg");
+    let segment_10 = segment(false,"10.jpg");
+    let segment_11 = segment(false,"11.jpg");
+    let segment_12 = segment(false,"12.jpg");
+    let segment_13 = segment(false,"13.jpg");
+    let segment_14 = segment(false,"14.jpg");
+    let segment_15 = segment(false,"15.jpg");
 
-    let segmentat_alphabet = segment(true,"alphabet.jpg");
+    let segmentat_alphabet = segment(false,"alphabet.jpg");
 
     // Manaully set correct classes for construction testing
     // -----------------
@@ -84,22 +81,23 @@ fn main() {
     // Gets LaTeX usualy correctly set classes
     // -----------------
     let correct_latex_1 = construct(true,&correct_classes_1,&bounds_1);
-    let correct_latex_2 = construct(true,&correct_classes_2,&bounds_2);
-    let correct_latex_3 = construct(true,&correct_classes_3,&bounds_3);
-    let correct_latex_4 = construct(true,&correct_classes_4,&bounds_4);
-    let correct_latex_5 = construct(true,&correct_classes_5,&bounds_5);
-    let correct_latex_6 = construct(true,&correct_classes_6,&bounds_6);
-    let correct_latex_7 = construct(true,&correct_classes_7,&bounds_7);
-    let correct_latex_8 = construct(true,&correct_classes_8,&bounds_8);
-    let correct_latex_9 = construct(true,&correct_classes_9,&bounds_9);
-    let correct_latex_10 = construct(true,&correct_classes_10,&bounds_10);
-    let correct_latex_11 = construct(true,&correct_classes_11,&bounds_11);
-    let correct_latex_12 = construct(true,&correct_classes_12,&bounds_12);
-    let correct_latex_13 = construct(true,&correct_classes_13,&bounds_13);
-    let correct_latex_14 = construct(true,&correct_classes_14,&bounds_14);
-    let correct_latex_15 = construct(true,&correct_classes_15,&bounds_15);
+    let correct_latex_2 = construct(false,&correct_classes_2,&bounds_2);
+    let correct_latex_3 = construct(false,&correct_classes_3,&bounds_3);
+    let correct_latex_4 = construct(false,&correct_classes_4,&bounds_4);
+    let correct_latex_5 = construct(false,&correct_classes_5,&bounds_5);
+    let correct_latex_6 = construct(false,&correct_classes_6,&bounds_6);
+    let correct_latex_7 = construct(false,&correct_classes_7,&bounds_7);
+    let correct_latex_8 = construct(false,&correct_classes_8,&bounds_8);
+    let correct_latex_9 = construct(false,&correct_classes_9,&bounds_9);
+    let correct_latex_10 = construct(false,&correct_classes_10,&bounds_10);
+    let correct_latex_11 = construct(false,&correct_classes_11,&bounds_11);
+    let correct_latex_12 = construct(false,&correct_classes_12,&bounds_12);
+    let correct_latex_13 = construct(false,&correct_classes_13,&bounds_13);
+    let correct_latex_14 = construct(false,&correct_classes_14,&bounds_14);
+    let correct_latex_15 = construct(false,&correct_classes_15,&bounds_15);
 
     // Prints LaTeX
+    // -----------------
     println!("correct_latex_1 :{}",correct_latex_1);
     println!("correct_latex_2 :{}",correct_latex_2);
     println!("correct_latex_3 :{}",correct_latex_3);
@@ -117,6 +115,7 @@ fn main() {
     println!("correct_latex_15:{}",correct_latex_15);
 
     // Gets pixels for symbols for images
+    // -----------------
     let input_1:Vec<Vec<f32>> = segment_1.iter().map(|(pixels,_)| pixels.iter().map(|&x|x as f32).collect()).collect();
     let input_2:Vec<Vec<f32>> = segment_2.iter().map(|(pixels,_)| pixels.iter().map(|&x|x as f32).collect()).collect();
     let input_3:Vec<Vec<f32>> = segment_3.iter().map(|(pixels,_)| pixels.iter().map(|&x|x as f32).collect()).collect();
@@ -138,6 +137,8 @@ fn main() {
     //  2nd bool determines if to print an evaluation of class accuracies
     let net = train_net(false,false);
 
+    // Runs symbols through network
+    // -----------------
     let class_labels_1:Vec<usize> = net.run(&input_1);
     let class_labels_2:Vec<usize> = net.run(&input_2);
     let class_labels_3:Vec<usize> = net.run(&input_3);
@@ -160,8 +161,11 @@ fn main() {
     file.unwrap().read_to_string(&mut string_contents).unwrap();
     let label_mappings:HashMap<usize,&str> = serde_json::from_str(&string_contents).unwrap();
 
+    //println!("got here");
+
     // Gets class symbols
-    let class_symbols_1:Vec<&str> = class_labels_1.into_iter().map(|x|*label_mappings.get(&x).unwrap()).collect();
+    // -----------------
+    let class_symbols_1:Vec<&str> = class_labels_1.into_iter().map(|x| *label_mappings.get(&x).unwrap()).collect();
     let class_symbols_2:Vec<&str> = class_labels_2.into_iter().map(|x|*label_mappings.get(&x).unwrap()).collect();
     let class_symbols_3:Vec<&str> = class_labels_3.into_iter().map(|x|*label_mappings.get(&x).unwrap()).collect();
     let class_symbols_4:Vec<&str> = class_labels_4.into_iter().map(|x|*label_mappings.get(&x).unwrap()).collect();
@@ -178,21 +182,22 @@ fn main() {
     let class_symbols_15:Vec<&str> = class_labels_15.into_iter().map(|x|*label_mappings.get(&x).unwrap()).collect();
 
     // Prints class symbols
-    println!("class_symbols_1 :{:02.?}",class_symbols_1);
-    println!("class_symbols_2 :{:02.?}",class_symbols_2);
-    println!("class_symbols_3 :{:02.?}",class_symbols_3);
-    println!("class_symbols_4 :{:02.?}",class_symbols_4);
-    println!("class_symbols_5 :{:02.?}",class_symbols_5);
-    println!("class_symbols_6 :{:02.?}",class_symbols_6);
-    println!("class_symbols_7 :{:02.?}",class_symbols_7);
-    println!("class_symbols_8 :{:02.?}",class_symbols_8);
-    println!("class_symbols_9 :{:02.?}",class_symbols_9);
-    println!("class_symbols_10:{:02.?}",class_symbols_10);
-    println!("class_symbols_11:{:02.?}",class_symbols_11);
-    println!("class_symbols_12:{:02.?}",class_symbols_12);
-    println!("class_symbols_13:{:02.?}",class_symbols_13);
-    println!("class_symbols_14:{:02.?}",class_symbols_14);
-    println!("class_symbols_15:{:02.?}",class_symbols_15);
+    // -----------------
+    println!("class_symbols_1 :{:.?}",class_symbols_1);
+    println!("class_symbols_2 :{:.?}",class_symbols_2);
+    println!("class_symbols_3 :{:.?}",class_symbols_3);
+    println!("class_symbols_4 :{:.?}",class_symbols_4);
+    println!("class_symbols_5 :{:.?}",class_symbols_5);
+    println!("class_symbols_6 :{:.?}",class_symbols_6);
+    println!("class_symbols_7 :{:.?}",class_symbols_7);
+    println!("class_symbols_8 :{:.?}",class_symbols_8);
+    println!("class_symbols_9 :{:.?}",class_symbols_9);
+    println!("class_symbols_10:{:.?}",class_symbols_10);
+    println!("class_symbols_11:{:.?}",class_symbols_11);
+    println!("class_symbols_12:{:.?}",class_symbols_12);
+    println!("class_symbols_13:{:.?}",class_symbols_13);
+    println!("class_symbols_14:{:.?}",class_symbols_14);
+    println!("class_symbols_15:{:.?}",class_symbols_15);
 }
 
 fn train_net(train:bool,eval:bool) -> NeuralNetwork {
@@ -842,11 +847,11 @@ fn construct(debug_out:bool,classes:&[&str],bounds:&Vec<((usize,usize),(usize,us
                     else if i+2 < row.symbols.len() {
                         // If `row.symbols[i+1]` and `row.symbols[i+2]` are contained within `row.symbols[i]`
                         if
-                        row.symbols[i+1].class == "\\cdot" && row.symbols[i+2].class == "\\cdot" && 
+                        row.symbols[i+1].class == "\\cdot " && row.symbols[i+2].class == "\\cdot " && 
                             row.symbols[i].bounds.contains_x(&[&row.symbols[i+1].bounds,&row.symbols[i+2].bounds]) 
                         {
                             // Sets new symbol 
-                            row.symbols[i].class = "\\div".to_string(); // `\div`
+                            row.symbols[i].class = "\\div ".to_string(); // `\div`
     
                             // Calculate y bounds (which "." is on top and which is on bottom)
                             let (min_y,max_y) = if row.symbols[i+1].bounds.min.y < row.symbols[i+2].bounds.min.y {
