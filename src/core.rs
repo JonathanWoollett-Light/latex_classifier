@@ -10,7 +10,8 @@ const ROW_CLEARANCE: f32 = 0.3f32;
 
 const GLOBAL_LUMA_BOUNDARY: u8 = 30;
 const LOCAL_LUMA_BOUNDARY: u8 = 50;
-const LOCAL_FIELD_SIZE: i32 = 40;
+const LOCAL_FIELD_REACH: i32 = 50;
+const LOCAL_FIELD_SIZE: usize = 5;
 
 // Returns symbol images and bounds
 pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
@@ -21,7 +22,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         Assigned,
     }
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     let start = Instant::now();
 
     // Open the image to segment (in this case it will reside within the `test_imgs` directory)
@@ -70,7 +71,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
     // #[cfg(debug_assertions)] // TEMP OFF FOR TESTING
     output_symbols(&symbols, name);
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     println!("{} : Finished segmentation", time(start));
 
     return symbols
@@ -83,13 +84,13 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         (width, height): (usize, usize),
         img_raw: &mut Vec<u8>,
     ) -> Vec<Vec<Pixel>> {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
 
-        // Intialises 2d vector of size height*width with Pixel::White.
+        // Initializes 2d vector of size height*width with Pixel::White.
         let mut pixels: Vec<Vec<Pixel>> = vec![vec!(Pixel::White; width as usize); height as usize];
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!(
             "{} * {} = {}",
             width.to_formatted_string(&Locale::en),
@@ -102,57 +103,34 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         // let global_luma: u8 =
         //     (img_raw.iter().fold(0u32, |sum, &x| sum + x as u32) / img_raw.len() as u32) as u8;
 
-        #[cfg(debug_assertions)]
-        let mut skipped: u32 = 0;
 
-        // O(n*(2p)^2) // n = img_raw.len(), p = LOCAL_FIELD_SIZE
-        let mut local_luma: Vec<u8> = vec![u8::default();img_raw.len()];
-        for y in 0..height as i32 {
+        // O(n*(2p)^2) // n = img_raw.len(), p = LOCAL_FIELD_REACH
+        let rows = (height as f32 / LOCAL_FIELD_SIZE as f32).ceil() as usize;
+        let cols = (width as f32 / LOCAL_FIELD_SIZE as f32).ceil() as usize;
+        let chunks = rows * cols;
+        
+        println!("{}:{}",rows,cols);
+        // panic!("got here {}",chunks);
 
-            //print!(" y:{}",y); // TO REMOVE
+        let mut local_luma: Vec<u8> = vec![u8::default();chunks];
+        let mut chunk: usize = 0;
 
-            let y_r = cmp::max(y - LOCAL_FIELD_SIZE, 0)
-                ..cmp::min(y + LOCAL_FIELD_SIZE + 1, height as i32);
+        for y in (0..height as i32).step_by(LOCAL_FIELD_SIZE) {
+
+            let y_r = cmp::max(y - LOCAL_FIELD_REACH, 0)
+                ..cmp::min(y + LOCAL_FIELD_SIZE as i32 + LOCAL_FIELD_REACH, height as i32);
             
             let y_size = y_r.end - y_r.start;
-            for x in 0..width as i32 {
-                //print!(" x:{}",x); // TO REMOVE
-
-                let i = (y * width as i32 + x) as usize;
-
-                // If pixel is extremely dark or extremely light, we need not bother with the
-                //  nuance of calculating the local average luminance as binarization should be 
-                //  obvious.
-                if img_raw[i] < GLOBAL_LUMA_BOUNDARY || img_raw[i] > 255-GLOBAL_LUMA_BOUNDARY {
-                    #[cfg(debug_assertions)]
-                    {
-                        skipped += 1;
-                    }
-                    continue;
-                }
-
-                //print!(" i:{}",i);
-
-
-                let x_r = cmp::max(x - LOCAL_FIELD_SIZE, 0)
-                    ..cmp::min(x + LOCAL_FIELD_SIZE + 1, width as i32);
+            for x in (0..width as i32).step_by(LOCAL_FIELD_SIZE) {
+                let x_r = cmp::max(x - LOCAL_FIELD_REACH, 0)
+                    ..cmp::min(x + LOCAL_FIELD_SIZE as i32 + LOCAL_FIELD_REACH, width as i32);
                 let x_size = x_r.end - x_r.start;
 
-                //print!(" x_r:{:.?}",x_r);
-
-                #[rustfmt::skip]
                 let total: u32 = y_r.clone().map(|yl| {
-                    x_r.clone().map(|xl| {
-                        let il = yl * width as i32 + xl;
-                        img_raw[il as usize] as u32
-                    }).sum::<u32>()
+                    let start = (yl * width as i32 + x_r.start) as usize;
+                    let end = start + x_size as usize;
+                    img_raw[start..end].iter().map(|x|*x as u32).sum::<u32>()
                 }).sum();
-
-                // let total: u32 = y_r.clone().map(|yl| {
-                //     let start = (yl * width as i32 + x) as usize;
-                //     let end = start + x_size as usize;
-                //     img_raw[start..end].iter().map(|x|*x as u32).sum::<u32>()
-                // }).sum();
 
                 //print!(" total:{}",total);
 
@@ -161,20 +139,25 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
                 // if (y_size * x_size) == 0 || total / (y_size * x_size) as u16 > u8::max_value() as u16 {
                 //     println!("{},{} \n {:.?},{:.?} \n {},{}",y_size,x_size,y_r,x_r,y,x);
                 // }
-                local_luma[i] = (total / (y_size * x_size) as u32) as u8;
-                
+                local_luma[chunk] = (total / (y_size * x_size) as u32) as u8;
+                chunk += 1;
                 //println!(" local_luma[i]:{}",local_luma[i]);
             }
         }
 
-        #[cfg(debug_assertions)]
-        println!("{} : Calculated local luminance fields ({})", time(start),skipped.to_formatted_string(&Locale::en));
+        
+        // #[cfg(debug_assertions)]
+        println!("{} : Calculated local luminance fields", time(start));
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
 
         for (y, row) in pixels.iter_mut().enumerate() {
+            let y_group = y / LOCAL_FIELD_SIZE;
             for (x, p) in row.iter_mut().enumerate() {
+                let x_group = x / LOCAL_FIELD_SIZE;
+                let group = y_group * cols + x_group;
+
                 let i = y * width + x; // Index of pixel of coordinates (x,y) in `img_raw`
                 
                 if img_raw[i] < GLOBAL_LUMA_BOUNDARY  { 
@@ -187,14 +170,14 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
                     // pixels `Pixel::White` by default
                     continue;
                 }
-                if let Some(local) = local_luma[i].checked_sub(LOCAL_LUMA_BOUNDARY) {
+                if let Some(local) = local_luma[group].checked_sub(LOCAL_LUMA_BOUNDARY) {
                     if img_raw[i] < local {
                         img_raw[i] = 0;
                         *p = Pixel::Black;
                         continue;
                     }
                 }
-                if let Some(local) = local_luma[i].checked_add(LOCAL_LUMA_BOUNDARY) {
+                if let Some(local) = local_luma[group].checked_add(LOCAL_LUMA_BOUNDARY) {
                     if img_raw[i] > local {
                         img_raw[i] = 255;
                         // pixels `Pixel::White` by default
@@ -207,7 +190,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
             }
         }
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Converted image to binary", time(start));
 
         pixels
@@ -216,7 +199,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         (width, height): (usize, usize),
         pixels: &mut Vec<Vec<Pixel>>,
     ) -> Vec<Vec<(usize, usize)>> {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
 
         // List of lists of pixels belonging to each symbol.
@@ -236,7 +219,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
             }
         }
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Fill finished", time(start));
 
         return pixel_lists;
@@ -304,7 +287,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         pixel_lists: &[Vec<(usize, usize)>],
         bounds: &[(Bound<usize>, (Bound<i32>, i32))],
     ) -> Vec<Vec<u8>> {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
         let mut symbols: Vec<Vec<u8>> = Vec::with_capacity(pixel_lists.len());
 
@@ -356,13 +339,13 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
             // Pushes the scaled symbol list to the symbols list.
             symbols.push(binary_vec);
         }
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Symbols set", time(start));
 
         symbols
     }
     fn output_symbols(symbols: &[Vec<u8>], name: &str) {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
         // Create folder
         if !Path::new("split").exists() {
@@ -392,7 +375,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         }
 
         //Export bounds
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Symbols output", time(start));
     }
     fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bound<i32>, i32))> {
@@ -426,7 +409,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
             sqr_bounds.push(square_indxs(lower_x, lower_y, upper_x, upper_y));
         }
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Bounds set", time(start));
 
         return bounds.into_iter().zip(sqr_bounds.into_iter()).collect();
@@ -473,7 +456,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         bounds: &[(Bound<usize>, (Bound<i32>, i32))],
         (width, height): (usize, usize),
     ) {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         let start = Instant::now();
 
         let i32_sp = spacing as i32;
@@ -532,7 +515,7 @@ pub fn segment(path: &str) -> Vec<(Vec<u8>, Bound<usize>)> {
         }
         border_img.save(format!("borders/{}.png", name)).unwrap();
 
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         println!("{} : Bounds output", time(start));
     }
 }
@@ -566,7 +549,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
             )
         }
     }
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     let start = Instant::now();
 
     // Converts given symbols and bounds into `Symbol` structs
@@ -642,7 +625,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }
 
     // Prints symbols in rows
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     {
         println!("rows (base):");
         for (indx, row) in rows.iter().enumerate() {
@@ -718,7 +701,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }
 
     // Prints symbols in rows
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     {
         println!("rows (combined symbols):");
         for (indx, row) in rows.iter().enumerate() {
@@ -729,7 +712,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     rows.sort_by_key(|r| r.center);
 
     // Prints symbols in rows and row centers
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     {
         println!("rows (vertically ordered):");
         for (indx, row) in rows.iter().enumerate() {
@@ -756,7 +739,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }
 
     // Prints average row heights
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     println!(
         "row heights: {:.?}",
         rows.iter().map(|x| x.height).collect::<Vec<usize>>()
@@ -846,7 +829,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     // }
     // return "".to_string();
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     println!("{} : Scripts set", time(start));
 
     // The last remaining row in `unassigned_rows` must be the base row.
@@ -859,7 +842,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     current_row.symbols.remove(0);
     unsafe {
         loop {
-            #[cfg(debug_assertions)]
+            // #[cfg(debug_assertions)]
             println!("building: {}", latex);
 
             // TODO Make `min_sub` and `min_sup` immutable
@@ -941,7 +924,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
         }
     }
 
-    #[cfg(debug_assertions)]
+    // #[cfg(debug_assertions)]
     println!("{} : Construction finished", time(start));
 
     return latex;
@@ -964,7 +947,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 }
 
 #[allow(dead_code)]
-#[cfg(debug_assertions)]
+// #[cfg(debug_assertions)]
 fn time(instant: Instant) -> String {
     let millis = instant.elapsed().as_millis() % 1000;
     let seconds = instant.elapsed().as_secs() % 60;
