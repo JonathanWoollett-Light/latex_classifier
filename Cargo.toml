@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 image =  "0.23.14"      # Image manipulation
-serde_json = "1.0.50"   # JSON format for serde
 num = "0.4.0"           # `FromPrivites` for generic
-num-format = "0.4.0" # Nice big nums
+num-format = "0.4.0"    # Nice big nums
+
+simplers_optimization = "0.4.2" # Optimising binarization

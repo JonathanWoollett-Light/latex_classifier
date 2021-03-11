@@ -82,3 +82,16 @@ impl<T: Ord + Sub<Output = T> + Copy> SubAssign for Point<T> {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct Line {
+    pub max: usize,
+    pub min: usize
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum Pixel {
+    White,
+    Black,
+    Assigned,
+}
