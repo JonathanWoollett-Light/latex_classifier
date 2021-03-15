@@ -1,7 +1,7 @@
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use latex_classifier::{construct::construct, models::*, segment::*, util::time};
+    use latex_classifier::{models::*, segment::*, util::time};
     use simplers_optimization::Optimizer;
 
     use std::{fs, path::Path, time::Instant, usize};
@@ -11,25 +11,45 @@ mod tests {
     const DIF_SCALE: f64 = 0.2;
 
     // Best binarization parameters
-    const EXTREME_LUMA_BOUNDARY: u8 = 8;
-    const GLOBAL_LUMA_BOUNDARY: u8 = 179;
-
-    const LOCAL_LUMA_BOUNDARY: u8 = 18;
-    const LOCAL_FIELD_REACH: i32 = 35;
-    const LOCAL_FIELD_SIZE: usize = 17;
+    const EXTREME_BOUNDARY: u8 = 8;
+    const GLOBAL_BOUNDARY: u8 = 179;
+    const LOCAL_BOUNDARY: u8 = 18;
+    const FIELD_REACH: usize = 35;
+    const FIELD_SIZE: usize = 17;
 
     #[test]
     fn base() {
         // Runs segmentation
         // -----------------
-        let segment = segment(
-            "tests/images/8.jpg",
-            EXTREME_LUMA_BOUNDARY,
-            GLOBAL_LUMA_BOUNDARY,
-            LOCAL_LUMA_BOUNDARY,
-            LOCAL_FIELD_REACH,
-            LOCAL_FIELD_SIZE65
+        let string = String::from("tests/images/2.jpg");
+        println!("string:\t{}",string);
+        let vec = string.into_bytes();
+        println!("vec:\t{:.?}",vec);
+        let c_str = Box::new(CArray::new(vec));
+
+        let bin_params = Box::new(BinarizationParameters {
+            extreme_boundary: EXTREME_BOUNDARY,
+            global_boundary: GLOBAL_BOUNDARY,
+            local_boundary: LOCAL_BOUNDARY,
+            field_reach: FIELD_REACH,
+            field_size: FIELD_SIZE
+        });
+
+        let segment: *mut CArray<CArray<SymbolPixels>> = segment(
+            Box::into_raw(c_str),
+            Box::into_raw(bin_params)
         );
+        unsafe {
+            println!("segment: {:.?}",(*segment));
+            let lines = std::slice::from_raw_parts((*segment).ptr, (*segment).size);
+            println!("lines: {:.?}",lines);
+            for l in lines.iter() {
+                let line = std::slice::from_raw_parts(l.ptr, l.size);
+                println!("l: {:.?}",line);
+            }
+
+        }
+        
 
         assert!(false);
 
@@ -59,7 +79,7 @@ mod tests {
                 v[0] as u8,
                 v[1] as u8,
                 v[2] as u8,
-                v[3] as i32,
+                v[3] as usize,
                 v[4] as usize,
             );
         }
@@ -87,18 +107,18 @@ mod tests {
                 v[0] as u8,
                 v[1] as u8,
                 v[2] as u8,
-                v[3] as i32,
+                v[3] as usize,
                 v[4] as usize,
             )
         }
         fn eval(
             samples: &[&str],
 
-            extreme_luma_boundary: u8,
-            global_luma_boundary: u8,
-            local_luma_boundary: u8,
-            local_field_reach: i32,
-            local_field_size: usize,
+            extreme_boundary: u8,
+            global_boundary: u8,
+            local_boundary: u8,
+            field_reach: usize,
+            field_size: usize,
         ) -> f64 {
             samples
                 .into_iter()
@@ -110,14 +130,14 @@ mod tests {
 
                     let mut img_raw: Vec<u8> = img.into_raw();
 
-                    let mut pixels = binarize(
+                    let _pixels = binarize(
                         size,
                         &mut img_raw,
-                        extreme_luma_boundary,
-                        global_luma_boundary,
-                        local_luma_boundary,
-                        local_field_reach,
-                        local_field_size,
+                        extreme_boundary,
+                        global_boundary,
+                        local_boundary,
+                        field_reach,
+                        field_size
                     );
 
                     // unsafe {
@@ -160,7 +180,7 @@ mod tests {
         extreme_luma_boundary: u8,
         global_luma_boundary: u8,
         local_luma_boundary: u8,
-        local_field_reach: i32,
+        local_field_reach: usize,
         local_field_size: usize,
     ) {
         let img = image::open(path).unwrap().to_luma8();
@@ -170,7 +190,7 @@ mod tests {
 
         let mut img_raw: Vec<u8> = img.into_raw();
 
-        let mut pixels = binarize(
+        let pixels = binarize(
             size,
             &mut img_raw,
             extreme_luma_boundary,
@@ -192,7 +212,7 @@ mod tests {
             .unwrap();
 
         // Gets lists of pixels belonging to each symbol
-        let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups(size, &mut pixels);
+        let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups(size, pixels);
         println!("groups: {}", pixel_lists.len());
 
         // Gets bounds, square bounds and square bounds scaling property for each symbol

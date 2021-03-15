@@ -2,6 +2,8 @@ use num::FromPrimitive;
 use std::ops::{Add, Div, Sub, SubAssign};
 
 // Struct for 2d bound
+
+#[repr(C)]
 #[derive(Clone, Debug)]
 pub struct Bound<T: Ord + Copy> {
     pub min: Point<T>,
@@ -60,6 +62,7 @@ impl<T: Ord + Copy> From<((T, T), (T, T))> for Bound<T> {
 }
 
 // Struct 2p point coordinates
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Point<T: Ord> {
     pub x: T,
@@ -86,7 +89,7 @@ impl<T: Ord + Sub<Output = T> + Copy> SubAssign for Point<T> {
 #[derive(Debug)]
 pub struct Line {
     pub max: usize,
-    pub min: usize
+    pub min: usize,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -94,4 +97,42 @@ pub enum Pixel {
     White,
     Black,
     Assigned,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct BinarizationParameters {
+    pub extreme_boundary: u8,
+    pub global_boundary: u8,
+    pub local_boundary: u8,
+    pub field_reach: usize,
+    pub field_size: usize
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct CArray<T> {
+    pub ptr: *mut T,
+    pub size: usize,
+}
+impl<T> CArray<T> {
+    pub fn new(v: Vec<T>) -> Self {
+        let (ptr,size,_) = v.into_raw_parts();
+        CArray {
+            ptr: ptr,
+            size: size,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct SymbolPixels {
+    pub pixels: CArray<u8>,
+    pub bound: Bound<u32>
+}
+impl SymbolPixels {
+    pub fn new(pixels: Vec<u8>, bound: Bound<u32> ) -> Self {
+        SymbolPixels { pixels: CArray::new(pixels), bound }
+    }
 }

@@ -1,36 +1,40 @@
 use crate::models::*;
 
-use std::{cmp, collections::VecDeque, fs, path::Path, usize};
+use std::{cmp, collections::VecDeque, fs, path::Path, str, usize};
 
 use image::{imageops::FilterType, ImageBuffer, Luma};
 
-// #[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
 use crate::util::time;
-// #[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
 use num_format::{Locale, ToFormattedString};
-// #[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
 use std::time::Instant;
 
-const SCALE: u32 = 20u32;
-
-
+const SCALE: u32 = 24u32;
 
 // Returns symbol images and bounds
-pub fn segment(
-    path: &str,
-    
-    // Binarization parameters
-    extreme_luma_boundary: u8,
-    global_luma_boundary: u8,
-    local_luma_boundary: u8,
-    local_field_reach: i32,
-    local_field_size: usize,
-) -> Vec<Vec<(Vec<u8>,Bound<usize>)>> {
-    // #[cfg(debug_assertions)]
+// ~O((nm)^2)
+#[no_mangle]
+pub extern "C" fn segment(
+    path_arr: *const CArray<u8>,
+    bin_parameters: *const BinarizationParameters
+) -> *mut CArray<CArray<SymbolPixels>> {
+    // TODO Why does this cause CFFI to break?
+    // let path = unsafe { str::from_raw_parts((*path_arr).ptr, (*path_arr).size,(*path_arr).size) };
+
+    let path_buf: &[u8] = unsafe { std::slice::from_raw_parts((*path_arr).ptr, (*path_arr).size) };
+    let path = str::from_utf8(path_buf).expect("string fail");
+    let safe_bin_parameters = unsafe { &*bin_parameters };
+    //panic!("path: {}, params: {:.?}",path,safe_bin_parameters);
+
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
+    //panic!("got here");
+
     // Open the image to segment (in this case it will reside within the `test_imgs` directory)
-    let img = image::open(path).unwrap().to_luma8();
+    let img = image::open(Path::new(&path)).expect("Opening image failed").to_luma8();
 
     // Gets dimensions of the image
     let dims = img.dimensions();
@@ -40,22 +44,23 @@ pub fn segment(
     let mut img_raw: Vec<u8> = img.into_raw();
 
     // 2d vector of size of image, where each pixel will be labelled white/black (and later used in forest fire)
-    let mut pixels: Vec<Vec<Pixel>> = binarize(
+    // O(2nm + (s+r)^2 * nm/s^2
+    let pixels: Vec<Vec<Pixel>> = binarize(
         size,
         &mut img_raw,
-        extreme_luma_boundary,
-        global_luma_boundary,
-        local_luma_boundary,
-        local_field_reach,
-        local_field_size
+        safe_bin_parameters.extreme_boundary,
+        safe_bin_parameters.global_boundary,
+        safe_bin_parameters.local_boundary,
+        safe_bin_parameters.field_reach,
+        safe_bin_parameters.field_size
     );
 
     // Gets name of image file ('some_image.jpg' -> 'some_image')
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let name = Path::new(path).file_stem().unwrap().to_str().unwrap();
 
     // Outputs binary image
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     {
         if !Path::new("binary_imgs").exists() {
             fs::create_dir("binary_imgs").unwrap();
@@ -68,47 +73,68 @@ pub fn segment(
     }
 
     // Gets lists of pixels belonging to each symbol
-    let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups(size, &mut pixels);
+    // O(nm)
+    let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups(size, pixels);
 
     // Gets bounds, square bounds and square bounds scaling property for each symbol
     let bounds: Vec<(Bound<usize>, (Bound<i32>, i32))> = get_bounds(&pixel_lists);
 
     // Outputs border image
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     output_bounds(2, [255, 0, 0], path, name, &img_raw, &bounds, size);
 
     // Gets lines in-between bounds
     let lines: Vec<Line> = get_lines(
-        bounds.iter().map(|(b,_)|b).collect::<Vec<&Bound<usize>>>(),
-        size.1
+        bounds
+            .iter()
+            .map(|(b, _)| b)
+            .collect::<Vec<&Bound<usize>>>(),
+        size.1,
     );
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("Lines: {:.?}", lines);
 
     // Outputs line image
-    // #[cfg(debug_assertions)]
-    output_lines([0, 0, 255],path,name,&img_raw,&lines,size.0);
+    #[cfg(debug_assertions)]
+    output_lines([0, 0, 255], path, name, &img_raw, &lines, size.0);
 
     // Gets scaled pixels belonging to each symbol
     let symbols: Vec<Vec<u8>> = get_symbols(&pixel_lists, &bounds);
 
     // Outputs symbol images
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     output_symbols(&symbols, name);
 
-    let symbols_lines: Vec<Vec<(Vec<u8>,Bound<usize>)>> = split_symbols_by_lines(
-        symbols,
-        bounds.into_iter().map(|(b,_)| b).collect(),
-        lines
-    );
+    let symbol_lines: Vec<Vec<(Vec<u8>, Bound<usize>)>> =
+        split_symbols_by_lines(symbols, bounds.into_iter().map(|(b, _)| b).collect(), lines);
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Finished segmentation", time(start));
 
-    symbols_lines
+    let mut container: Vec<CArray<SymbolPixels>> = Vec::new();
+    for i in 0..symbol_lines.len() {
+        let vec: Vec<SymbolPixels> = symbol_lines[i].iter().map(|(pixels,bound)| {
+            // TODO Do this cast better
+            let u32_bound = Bound { min: Point { x: bound.min.x as u32, y: bound.min.y as u32 }, max: Point { x: bound.max.x as u32, y: bound.max.y as u32 } };
+            //println!("pixels: {}",pixels.len());
+            SymbolPixels::new(pixels.clone(),u32_bound)
+        }).collect();
+        
+        let arr: CArray<SymbolPixels> = CArray::new(vec);
+        container.push(arr);
+    }
+    let boxed_container: Box<CArray<CArray<SymbolPixels>>> = Box::new(CArray::new(container));
+
+    //panic!("got to end");
+
+    Box::into_raw(boxed_container)
+    //symbol_lines
 }
 
+// O(2nm + (s+r)^2 * (n/s)(m/s))
+// s = local field size
+// r = local field reach
 pub fn binarize(
     (width, height): (usize, usize),
     img_raw: &mut Vec<u8>,
@@ -117,16 +143,16 @@ pub fn binarize(
     global_luma_boundary: u8,
 
     local_luma_boundary: u8,
-    local_field_reach: i32,
+    local_field_reach: usize,
     local_field_size: usize,
 ) -> Vec<Vec<Pixel>> {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
     // Initializes 2d vector of size height*width with Pixel::White.
     let mut pixels: Vec<Vec<Pixel>> = vec![vec!(Pixel::White; width as usize); height as usize];
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!(
         "{} * {} = {}",
         width.to_formatted_string(&Locale::en),
@@ -136,34 +162,37 @@ pub fn binarize(
 
     // Gets average luma among pixels
     //  Uses `.fold()` instead of `.sum()` as sum of values will likely exceed `u8:MAX`
+    // O(nm)
     let global_luma: u8 =
         (img_raw.iter().fold(0u32, |sum, &x| sum + x as u32) / img_raw.len() as u32) as u8;
     let global_luma_sub = global_luma.checked_sub(global_luma_boundary);
     let global_luma_add = global_luma.checked_add(global_luma_boundary);
 
-    // O(n*(2p)^2) // n = img_raw.len(), p = local_field_reach
     let rows = (height as f32 / local_field_size as f32).ceil() as usize;
     let cols = (width as f32 / local_field_size as f32).ceil() as usize;
     let chunks = rows * cols;
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{}:{}", rows, cols);
     // panic!("got here {}",chunks);
 
     let mut local_luma: Vec<u8> = vec![u8::default(); chunks];
     let mut chunk: usize = 0;
 
+    let i_local_field_reach = local_field_reach as i32;
+
+    // O((s+r)^2*(n/s)*(m/s))
     for y in (0..height as i32).step_by(local_field_size) {
-        let y_r = cmp::max(y - local_field_reach, 0)
+        let y_r = cmp::max(y - i_local_field_reach, 0)
             ..cmp::min(
-                y + local_field_size as i32 + local_field_reach,
+                y + local_field_size as i32 + i_local_field_reach,
                 height as i32,
             );
         let y_size = y_r.end - y_r.start;
         for x in (0..width as i32).step_by(local_field_size) {
-            let x_r = cmp::max(x - local_field_reach, 0)
+            let x_r = cmp::max(x - i_local_field_reach, 0)
                 ..cmp::min(
-                    x + local_field_size as i32 + local_field_reach,
+                    x + local_field_size as i32 + i_local_field_reach,
                     width as i32,
                 );
             let x_size = x_r.end - x_r.start;
@@ -189,12 +218,13 @@ pub fn binarize(
         }
     }
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Calculated local luminance fields", time(start));
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
+    // O(nm)
     for (y, row) in pixels.iter_mut().enumerate() {
         let y_group = y / local_field_size;
         for (x, p) in row.iter_mut().enumerate() {
@@ -246,17 +276,18 @@ pub fn binarize(
         }
     }
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Converted image to binary", time(start));
 
     pixels
 }
 
+// O((nm)^2)
 pub fn get_pixel_groups(
     (width, height): (usize, usize),
-    pixels: &mut Vec<Vec<Pixel>>,
+    mut pixels: Vec<Vec<Pixel>>,
 ) -> Vec<Vec<(usize, usize)>> {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
     // List of lists of pixels belonging to each symbol.
@@ -271,12 +302,19 @@ pub fn get_pixel_groups(
 
                 // Triggers the forest fire algorithm
                 let last_index = pixel_lists.len() - 1;
-                forest_fire(pixels, width, height, x, y, &mut pixel_lists[last_index]);
+                forest_fire(
+                    &mut pixels,
+                    width,
+                    height,
+                    x,
+                    y,
+                    &mut pixel_lists[last_index],
+                );
             }
         }
     }
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Fill finished", time(start));
 
     // let min = width * height / 10000;
@@ -347,8 +385,10 @@ pub fn get_pixel_groups(
     }
 }
 
+// TODO This could be compressed into `get_pixel_groups`
+// O(nm)
 pub fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bound<i32>, i32))> {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
     // Gets bounds
     let mut bounds: Vec<Bound<usize>> = Vec::new();
@@ -375,11 +415,13 @@ pub fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bo
         }
 
         // Gets square bounds centred on original bounds
-        bounds.push(Bound::from(((lower_x, lower_y), (upper_x, upper_y))));
+        let bound = Bound::from(((lower_x, lower_y), (upper_x, upper_y)));
+        //println!("bound: {:.?}",bound);
+        bounds.push(bound);
         sqr_bounds.push(square_indxs(lower_x, lower_y, upper_x, upper_y));
     }
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Bounds set", time(start));
 
     return bounds.into_iter().zip(sqr_bounds.into_iter()).collect();
@@ -418,24 +460,40 @@ pub fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bo
     }
 }
 
-pub fn get_lines(bounds: Vec<&Bound<usize>>,height:usize) -> Vec<Line> {
-    // #[cfg(debug_assertions)]
+// O(nm/p) => O(p)
+// p = min symbol size, right now using nm/20000 therefore O(p) => O(2000) => O(1)
+pub fn get_lines(bounds: Vec<&Bound<usize>>, height: usize) -> Vec<Line> {
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
     let mut lines = vec![
-        Line { max: height, min: bounds[0].max.y },
-        Line { max: bounds[0].min.y, min: 0 }
+        Line {
+            max: height,
+            min: bounds[0].max.y,
+        },
+        Line {
+            max: bounds[0].min.y,
+            min: 0,
+        },
     ];
+    // Height of tallest symbol
     let mut max_height = bounds[0].max.y - bounds[0].min.y;
+    // O(nm)
     for b in bounds.into_iter().skip(1) {
         let h = b.max.y - b.min.y;
-        if h > max_height { max_height = h; }
+        if h > max_height {
+            max_height = h;
+        }
         for i in 0..lines.len() {
             // Writing these comparisons slightly more efficiently makes them ugly and hard to understand.
+            // So for now, they done this way.
 
             // Covering
             if lines[i].max > b.max.y && lines[i].min < b.min.y {
-                lines.push(Line { max: b.min.y, min: lines[i].min });
+                lines.push(Line {
+                    max: b.min.y,
+                    min: lines[i].min,
+                });
                 lines[i].min = b.max.y;
             }
             // Upper intersection
@@ -453,19 +511,23 @@ pub fn get_lines(bounds: Vec<&Bound<usize>>,height:usize) -> Vec<Line> {
         }
     }
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Got lines", time(start));
 
     // Filter out all small lines (as they could be between super/sub script unless they are edge lines)
-    lines.into_iter().filter(|l| (l.max - l.min) > (max_height / 4) || l.max == height || l.min == 0).collect()
+    lines
+        .into_iter()
+        .filter(|l| (l.max - l.min) > (max_height / 4) || l.max == height || l.min == 0)
+        .collect()
 }
 
 // Returns tuple of: 2d vec of pixels in symbol, Bounds of symbol
+// O(p)
 pub fn get_symbols(
     pixel_lists: &[Vec<(usize, usize)>],
     bounds: &[(Bound<usize>, (Bound<i32>, i32))],
 ) -> Vec<Vec<u8>> {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
     let mut symbols: Vec<Vec<u8>> = Vec::with_capacity(pixel_lists.len());
 
@@ -517,46 +579,56 @@ pub fn get_symbols(
         // Pushes the scaled symbol list to the symbols list.
         symbols.push(binary_vec);
     }
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Symbols set", time(start));
 
     symbols
 }
 
-fn split_symbols_by_lines(mut symbols: Vec<Vec<u8>>, mut bounds: Vec<Bound<usize>>, mut lines: Vec<Line>) -> Vec<Vec<(Vec<u8>,Bound<usize>)>> {
-    // #[cfg(debug_assertions)]
+// O(p log p + p)
+fn split_symbols_by_lines(
+    mut symbols: Vec<Vec<u8>>,
+    mut bounds: Vec<Bound<usize>>,
+    mut lines: Vec<Line>,
+) -> Vec<Vec<(Vec<u8>, Bound<usize>)>> {
+    #[cfg(debug_assertions)]
     let start = Instant::now();
-    
+
     // Presuming already sorted, might need top come back to this if I'm wrong
     // TODO If this proves to always be true, switch back to stable from nightly
-    lines.sort_by_key(|l|l.max);
-    // #[cfg(debug_assertions)]
+    // O(p log p)
+    lines.sort_by_key(|l| l.max);
+    #[cfg(debug_assertions)]
     println!("Sorted lines: {:.?}", lines);
 
-     // The `-1` here could cause an error if there was not enough space to create lines at the bottom and top of an image.
-    let mut symbol_lines: Vec<Vec<(Vec<u8>,Bound<usize>)>> = vec![Vec::new();lines.len()-1];
+    // The `-1` here could cause an error if there was not enough space to create lines at the bottom and top of an image.
+    let mut symbol_lines: Vec<Vec<(Vec<u8>, Bound<usize>)>> = vec![Vec::new(); lines.len() - 1];
     // Assuming lines sorted by ascending max (from 0->max, given 0 is top, this is top to bottom technically)
+    // O(p)
     for (line, symbol_line) in lines.into_iter().skip(1).zip(symbol_lines.iter_mut()) {
         let mut adjust = 0;
         for i in 0..bounds.len() {
-            if bounds[i-adjust].min.y < line.max {
-                symbol_line.push((symbols.remove(i-adjust),bounds.remove(i-adjust)));
+            if bounds[i - adjust].min.y < line.max {
+                symbol_line.push((symbols.remove(i - adjust), bounds.remove(i - adjust)));
                 adjust += 1;
             }
         }
     }
 
-    // #[cfg(debug_assertions)]
-    println!("Line widths: {:.?}", symbol_lines.iter().map(|s|s.len()).collect::<Vec<usize>>());
+    #[cfg(debug_assertions)]
+    println!(
+        "Line widths: {:.?}",
+        symbol_lines.iter().map(|s| s.len()).collect::<Vec<usize>>()
+    );
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Split symbols into lines", time(start));
 
     symbol_lines
 }
 
 pub fn output_symbols(symbols: &[Vec<u8>], name: &str) {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
     // Create folder
     if !Path::new("split").exists() {
@@ -586,7 +658,7 @@ pub fn output_symbols(symbols: &[Vec<u8>], name: &str) {
     }
 
     //Export bounds
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Symbols output", time(start));
 }
 
@@ -599,7 +671,7 @@ pub fn output_bounds(
     bounds: &[(Bound<usize>, (Bound<i32>, i32))],
     (width, height): (usize, usize),
 ) {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
     let i32_sp = spacing as i32;
@@ -658,7 +730,7 @@ pub fn output_bounds(
     }
     border_img.save(format!("borders/{}.png", name)).unwrap();
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Bounds output", time(start));
 }
 
@@ -670,7 +742,7 @@ pub fn output_lines(
     lines: &[Line],
     width: usize,
 ) {
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     let start = Instant::now();
 
     // Opens another version of image
@@ -694,6 +766,6 @@ pub fn output_lines(
     }
     line_img.save(format!("lines/{}.png", name)).unwrap();
 
-    // #[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     println!("{} : Lines output", time(start));
 }

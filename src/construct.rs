@@ -9,6 +9,8 @@ use std::time::Instant;
 
 const ROW_CLEARANCE: f32 = 0.3f32;
 
+// O(n^2 + 7n + 2n*log(n)) => O(n^2)
+// n = number of symbols
 pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     // Struct for symbol
     #[derive(Clone, Debug)]
@@ -43,6 +45,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     let start = Instant::now();
 
     // Converts given symbols and bounds into `Symbol` structs
+    // O(n)
     let mut combined: Vec<Symbol> = classes
         .iter()
         .zip(bounds.iter())
@@ -58,21 +61,24 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 
     // min x and y out of all symbols
     let min_x: usize = combined[0].bounds.min.x; // O(1)
+    // O(n)
     let min_y: usize = bounds
         .iter()
         .min_by_key(|b| b.min.y)
         .expect("Bounds empty")
         .min
-        .y; // O(n)
+        .y;
 
     let origin = Point { x: min_x, y: min_y };
 
     // Subtract mins (`origin`) from bounds of all symbols
+    // O(n)
     for row in combined.iter_mut() {
         row.bounds -= origin;
     }
 
     // Calculates center y coordinate of each symbol
+    // O(n)
     let y_centers: Vec<usize> = combined.iter().map(|s| s.bounds.y_center()).collect();
 
     // Initializes rows, 1st row containing 1st symbol
@@ -87,6 +93,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }];
 
     // Iterates across symbols and their centers (skipping 1st)
+    // O(n^2 / 2)
     for (y_center, symbol) in y_centers.into_iter().zip(combined.into_iter()).skip(1) {
         let mut new_row = true;
         // Iterate through existing rows checking if this symbols belongs to one
@@ -124,6 +131,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }
 
     // Construct composite symbols
+    // O(n)
     for row in rows.iter_mut() {
         let mut i = 0usize;
         // Can't use for loop since we use `.remove()` in loop (TODO Double check this)
@@ -199,6 +207,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
         }
     }
     // Sorts rows in vertical order rows[0] is top row
+    // O(n log n)
     rows.sort_by_key(|r| r.center);
 
     // Prints symbols in rows and row centers
@@ -213,6 +222,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     }
 
     // Calculates average height of rows
+    // O(n)
     for row in rows.iter_mut() {
         let mut ignored_symbols = 0usize;
         for symbol in row.symbols.iter() {
@@ -241,6 +251,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 
     // Only 1 row is not a sub/super script row of another.
     // When we only have 1 unreferenced row we know we have linked all other rows as sub/super scripts.
+    // O(n^2/2) 
     while unassigned_rows.len() > 1 {
         // List of indexes in reference to rows to remove from unassigned_rows as they have been assigned
         let mut removal_list: Vec<usize> = Vec::new();
@@ -330,6 +341,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     let mut latex: String = current_row.symbols[0].class.clone();
     // Removes set symbol from row
     current_row.symbols.remove(0);
+    // O(n)
     unsafe {
         loop {
             #[cfg(debug_assertions)]
@@ -422,9 +434,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     // Returns some minimum from 4 element array, unless minium equals usize::max_value() then return none.
     fn min_option(slice: &[usize; 4]) -> Option<usize> {
         let min = *slice.iter().min().unwrap();
-        if min == usize::max_value() {
-            return None;
-        }
+        if min == usize::max_value() { return None; }
         Some(min)
     }
 
