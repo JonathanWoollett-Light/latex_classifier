@@ -61,7 +61,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 
     // min x and y out of all symbols
     let min_x: usize = combined[0].bounds.min.x; // O(1)
-    // O(n)
+                                                 // O(n)
     let min_y: usize = bounds
         .iter()
         .min_by_key(|b| b.min.y)
@@ -251,7 +251,7 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 
     // Only 1 row is not a sub/super script row of another.
     // When we only have 1 unreferenced row we know we have linked all other rows as sub/super scripts.
-    // O(n^2/2) 
+    // O(n^2/2)
     while unassigned_rows.len() > 1 {
         // List of indexes in reference to rows to remove from unassigned_rows as they have been assigned
         let mut removal_list: Vec<usize> = Vec::new();
@@ -434,7 +434,9 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     // Returns some minimum from 4 element array, unless minium equals usize::max_value() then return none.
     fn min_option(slice: &[usize; 4]) -> Option<usize> {
         let min = *slice.iter().min().unwrap();
-        if min == usize::max_value() { return None; }
+        if min == usize::max_value() {
+            return None;
+        }
         Some(min)
     }
 
