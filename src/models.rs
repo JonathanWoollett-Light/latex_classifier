@@ -186,3 +186,8 @@ impl From<&Pixel> for Vec<u8> {
         vec![pixel.r, pixel.g, pixel.b]
     }
 }
+
+pub struct CReturn {
+    pub symbols: CArray<CArray<SymbolPixels>>,
+    pub pixels: CArray<u8>
+}

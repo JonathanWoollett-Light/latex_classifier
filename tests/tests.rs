@@ -6,7 +6,7 @@ mod tests {
 
     use std::{fs, path::Path, time::Instant, usize};
 
-    use image::{ImageBuffer, Luma};
+    use image::{ImageBuffer, Luma, Rgb};
 
     const DIF_SCALE: f64 = 0.2;
 
@@ -21,9 +21,9 @@ mod tests {
     fn base() {
         // Runs segmentation
         // -----------------
-        let string = String::from("tests/images/2.jpg");
+        let string = String::from("tests/images/med_test.png");
         println!("string:\t{}", string);
-        let vec = string.into_bytes();
+        let vec = string.clone().into_bytes();
         println!("vec:\t{:.?}", vec);
         let c_str = Box::new(CArray::new(vec));
 
@@ -34,16 +34,33 @@ mod tests {
             field_reach: FIELD_REACH,
             field_size: FIELD_SIZE,
         });
-
-        let segment: *mut CArray<CArray<SymbolPixels>> =
-            segment_file(Box::into_raw(c_str), Box::into_raw(bin_params));
+        let rtn: *mut CReturn = segment_file(Box::into_raw(c_str), Box::into_raw(bin_params));
+        
         unsafe {
-            println!("segment: {:.?}", (*segment));
-            let lines = std::slice::from_raw_parts((*segment).ptr, (*segment).size);
-            println!("lines: {:.?}", lines);
+            let pixels: &CArray<u8> = &(*rtn).pixels;
+
+            let img = image::open(Path::new(&string))
+                .expect("Opening image failed")
+                .to_rgb8();
+            let dims = img.dimensions();
+
+            let pixel_vec: &[u8] = unsafe { std::slice::from_raw_parts((pixels).ptr, (pixels).size) };
+            let image = ImageBuffer::<Rgb<u8>, Vec<u8>>::from_raw(dims.0,dims.1, pixel_vec.to_vec()).expect("Image creation failed");
+            image.save("test_image.png").expect("Image saving failed");
+        }
+        
+
+        unsafe {
+            let segment: &CArray<CArray<SymbolPixels>> = &(*rtn).symbols;
+            println!("segment: {:.?}", (segment));
+            let lines = std::slice::from_raw_parts((segment).ptr, (segment).size);
+            println!("\t{:.?}", lines);
             for l in lines.iter() {
                 let line = std::slice::from_raw_parts(l.ptr, l.size);
-                println!("l: {:.?}", line);
+                for s in line.iter() {
+                    println!("\t\t{:.?}", s);
+                }
+                
             }
         }
 

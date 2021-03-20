@@ -4,45 +4,91 @@ import numpy as np
 from cffi import FFI
 import ctypes
 
-import cv2 # display
+# import gc
+# gc.disable
 
-# ffi = FFI()
-# ffi.cdef("""
-#     typedef struct { uint8_t extremeBoundary; uint8_t globalBoundary; uint8_t localBoundary; size_t fieldReach; size_t fieldSize; } BinarizationParameters;
-#     typedef struct { void* ptr; uint32_t size; } CArray;
+import time
 
-#     CArray* segment_buffer(CArray*, size_t, size_t, BinarizationParameters*);
-# """)
+import cv2 # display#
 
-# C = ffi.dlopen("./target/release/latex_classifier.dll")
+import weakref
+global_weakkeydict = weakref.WeakKeyDictionary()
 
-# EXTREME_BOUNDARY = 8
-# GLOBAL_BOUNDARY = 179
-# LOCAL_BOUNDARY = 18
-# FIELD_REACH = 35
-# FIELD_SIZE = 17
+ffi = FFI()
+ffi.cdef("""
+    typedef struct { uint8_t extremeBoundary; uint8_t globalBoundary; uint8_t localBoundary; size_t fieldReach; size_t fieldSize; } BinarizationParameters;
+    typedef struct { void* ptr; uint32_t size; } CArray;
+    typedef struct { CArray symbols; CArray pixels; } CReturn;
 
-img = Image.open("tests/images/med_test.png")
+    CReturn* segment_buffer(CArray*, size_t, size_t, BinarizationParameters*);
+""")
+
+C = ffi.dlopen("./target/release/latex_classifier.dll")
+
+EXTREME_BOUNDARY = 8
+GLOBAL_BOUNDARY = 179
+LOCAL_BOUNDARY = 18
+FIELD_REACH = 35
+FIELD_SIZE = 17
+
+img = Image.open("tests/images/3.jpg")
 arr = np.asarray(img)
-print(img)
-print(arr.shape)
-flat_arr = arr.flatten()
-print(flat_arr.shape,len(flat_arr))
-# c_arr = ffi.new("CArray*")
-# c_arr.size = len(flat_arr)
-# c_arr.ptr = ffi.new("uint8_t[]",flat_arr.tolist())
+# print(img)
+print("arr.shape:",arr.shape)
 
-# bin_params = ffi.new("BinarizationParameters*")
-# bin_params.extremeBoundary = EXTREME_BOUNDARY
-# bin_params.globalBoundary = GLOBAL_BOUNDARY
-# bin_params.localBoundary = LOCAL_BOUNDARY
-# bin_params.fieldReach = FIELD_REACH
-# bin_params.fieldSize = FIELD_SIZE
+preStart = time.time()
 
-# lines_arr = C.segment_buffer(c_arr,arr.shape[0],arr.shape[1],bin_params)
+flat_arr = arr.flatten('C').astype("uint8")
+# print(flat_arr.shape,len(flat_arr),flat_arr.dtype)
+# print(type(flat_arr.tolist()[0]))
+# black = [i for i in range(len(flat_arr)) if flat_arr[i]==0]
+# print(black[0:10])
 
-# print(lines_arr.size)
-# values = ffi.cast("CArray *",lines_arr.ptr) 
+c_arr = ffi.new("CArray*")
+c_arr.size = len(flat_arr)
+
+# print(flat_arr.tolist()[0:20])
+c_arr_ptr = ffi.new("uint8_t[]",flat_arr.tolist())
+c_arr.ptr = c_arr_ptr
+global_weakkeydict[c_arr] = c_arr_ptr
+
+bin_params = ffi.new("BinarizationParameters*")
+bin_params.extremeBoundary = EXTREME_BOUNDARY
+bin_params.globalBoundary = GLOBAL_BOUNDARY
+bin_params.localBoundary = LOCAL_BOUNDARY
+bin_params.fieldReach = FIELD_REACH
+bin_params.fieldSize = FIELD_SIZE
+
+preTime = time.time() - preStart
+
+rustStart = time.time()
+rust_rtn = C.segment_buffer(c_arr,arr.shape[1],arr.shape[0],bin_params)
+rustTime = time.time() - rustStart
+
+postStart = time.time()
+
+pixels_arr = rust_rtn.pixels
+print("SIZE:",pixels_arr.size)
+pixels = ffi.cast("uint8_t*",pixels_arr.ptr)
+debug_arr = np.array([pixels[i] for i in range(pixels_arr.size)]).astype("uint8")
+# print("debug_arr.dtype:",debug_arr.dtype)
+debug_img = np.reshape(debug_arr,arr.shape,'C')
+# print(debug_img.shape)
+img = Image.fromarray(debug_img, 'RGB')
+img = Image.fromarray(debug_img, 'RGB')
+postTime = time.time() - postStart
+
+print("Time:",f"{preTime:.3f}","->",f"{rustTime:.3f}","->",f"{postTime:.3f}")
+
+
+img.save("test_image.png")
+img.show()
+
+lines_arr = rust_rtn.symbols
+print(lines_arr.size)
+values = ffi.cast("CArray *",lines_arr.ptr)
+
+# ----------------------------
 
 # lines = []
 # for i in range(lines_arr.size):
@@ -71,10 +117,23 @@ print(flat_arr.shape,len(flat_arr))
 # while(True):
 #     ret,frame = vid.read()
     
-#     # lines_arr = C.segment(c_str,bin_params)
+#     # for x in range(frame.shape[0]):
+#     #     for y in range(frame.shape[1]):
+#     #         if np.sum(frame[x,y,:]) < 200:
+#     #             frame[x,y,:] = 255
+        
+
+#     # pixels_arr = rust_rtn.pixels
+#     # pixels = ffi.cast("uint8_t*",pixels_arr.ptr)
+#     # debug_arr = np.array([pixels[i] for i in range(pixels_arr.size)]).astype("uint8")
+#     # debug_img = np.reshape(debug_arr,arr.shape,'C')
+#     # img = Image.fromarray(debug_img, 'RGB')
 
 #     cv2.imshow("frame",frame)
-#     if cv2.waitKey(1) & 0xFF == ord('q'):
-#         break
+
+#     if cv2.waitKey(10) & 0xFF == ord('e'):
+#         print(frame.shape)
+        
+
 # vid.release()
 # cv2.destroyAllWindows()

@@ -21,12 +21,20 @@ pub extern "C" fn segment_buffer(
     j_size: usize,
     i_size: usize,
     bin_parameters: *const BinarizationParameters,
-) -> *mut CArray<CArray<SymbolPixels>> {
+) -> *mut CReturn {
     let img_slice = unsafe { std::slice::from_raw_parts((*img_raw).ptr, (*img_raw).size) };
+
+    // print!("[ ");
+    // for i in 0..20 {
+    //     print!("{} ",img_slice[i]);
+    // }
+    // println!("]");
+
     let safe_bin_parameters = unsafe { &*bin_parameters };
 
     let mut img_vec = from_buffer(img_slice, (i_size, j_size));
 
+    // println!("img_vec: {}*{}:",img_vec.len(),img_vec[0].len());
     // println!("{}*{}:",img_vec.len(),img_vec[0].len());
     // for r in img_vec.iter() {
     //     for p in r.iter() {
@@ -39,6 +47,8 @@ pub extern "C" fn segment_buffer(
     //     println!();
     // }
     // println!();
+
+    // panic!("stop here");
 
     #[cfg(debug_assertions)]
     let start = Instant::now();
@@ -54,9 +64,9 @@ pub extern "C" fn segment_buffer(
         safe_bin_parameters.field_size,
     );
 
-    output_luma(&img_vec, "binary_image");    
+    // output_luma(&img_vec, "binary_image");   
 
-    println!("{}*{}:",binary_pixels.len(),binary_pixels[0].len());
+    // println!("binary_pixels: {}*{}:",binary_pixels.len(),binary_pixels[0].len());
     // for r in binary_pixels.iter() {
     //     for p in r.iter() {
     //         match p {
@@ -75,7 +85,7 @@ pub extern "C" fn segment_buffer(
     // O(nm)
     let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups_buffer(binary_pixels);
 
-    println!("pixel_lists: {}", pixel_lists.len());
+    // println!("pixel_lists: {}", pixel_lists.len());
 
     // Gets bounds, square bounds and square bounds scaling property for each symbol
     let bounds: Vec<(Bound<usize>, (Bound<i32>, i32))> = get_bounds(&pixel_lists);
@@ -104,12 +114,12 @@ pub extern "C" fn segment_buffer(
 
     //panic!("got here");
 
-    output_colour(&img_vec, "border_image");
+    // output_colour(&img_vec, "border_image");
 
     // Gets lines in-between bounds
     let lines: Vec<Line> = get_lines(bounds.iter().map(|b| &b.0).collect(), i_size);
 
-    println!("lines: {:.?}",lines);
+    // println!("lines: {:.?}",lines);
 
     write_lines(&lines, &mut img_vec, [0, 0, 255], Some(20));
 
@@ -127,9 +137,9 @@ pub extern "C" fn segment_buffer(
     // }
     // println!();
 
-    output_colour(&img_vec, "line_image");
+    // output_colour(&img_vec, "line_image");
 
-    panic!("stop here");
+    // panic!("stop here");
 
     // Gets scaled pixels belonging to each symbol
     let symbols: Vec<Vec<u8>> = get_symbols(&pixel_lists, &bounds);
@@ -158,11 +168,13 @@ pub extern "C" fn segment_buffer(
         let arr: CArray<SymbolPixels> = CArray::new(vec);
         container.push(arr);
     }
-    let boxed_container: Box<CArray<CArray<SymbolPixels>>> = Box::new(CArray::new(container));
 
+    let rtn_pixels: Vec<u8> = img_vec.into_iter().flatten().flat_map(|p|Vec::from(p)).collect();
     //panic!("got to end");
 
-    Box::into_raw(boxed_container)
+    let rtn = Box::new(CReturn { symbols: CArray::new(container), pixels: CArray::new(rtn_pixels)  });
+
+    Box::into_raw(rtn)
     //symbol_lines
 }
 
@@ -194,7 +206,7 @@ fn output_colour(pixels: &Vec<Vec<Pixel>>, name: &str) {
 pub extern "C" fn segment_file(
     path_arr: *const CArray<u8>,
     bin_parameters: *const BinarizationParameters,
-) -> *mut CArray<CArray<SymbolPixels>> {
+) -> *mut CReturn {
     // TODO Why does this cause CFFI to break?
     // let path = unsafe { str::from_raw_parts((*path_arr).ptr, (*path_arr).size,(*path_arr).size) };
 
@@ -210,6 +222,16 @@ pub extern "C" fn segment_file(
 
     // Gets raw pixel values from the image.
     let img_raw: Vec<u8> = img.into_raw();
+
+    println!("img_raw.len(): {}",img_raw.len());
+
+    let black: Vec<usize> = img_raw.iter().enumerate().filter_map(|(i,p)| if *p==0 { Some(i) } else { None }).collect();
+    print!("[ ");
+    for i in 0..10 {
+        print!("{} ",black[i]);
+    }
+    println!("]");
+
     // panic!("dims:");
     let box_img = Box::new(CArray::new(img_raw));
 
@@ -690,16 +712,21 @@ pub fn get_lines(bounds: Vec<&Bound<usize>>, i_size: usize) -> Vec<Line> {
     #[cfg(debug_assertions)]
     let start = Instant::now();
 
-    let mut lines = vec![
-        Line {
+    let mut lines = Vec::with_capacity(bounds.len()); // Number of symbols = maximum number of lines
+
+    if bounds[0].max.i < i_size-1 { 
+        lines.push(Line {
             max: i_size-1,
             min: bounds[0].max.i+1,
-        },
-        Line {
+        });
+    }
+    if bounds[0].min.i > 0 {
+        lines.push(Line {
             max: bounds[0].min.i-1,
             min: 0,
-        },
-    ];
+        });
+    }
+    
     println!("initial lines: {:.?}",lines);
     // Height of tallest symbol
     let mut max_i_size = bounds[0].max.i - bounds[0].min.i;
