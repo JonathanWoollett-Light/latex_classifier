@@ -1,7 +1,9 @@
 /target
-*.png
-*.jpg
 checkpoints
 combined_dataset
 .vscode
 Cargo.lock
+binary_image.png
+border_image.png
+line_image.png
+test_image.png
