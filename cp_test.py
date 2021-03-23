@@ -88,8 +88,9 @@ lines_arr = rust_rtn.symbols
 print(lines_arr.size)
 values = ffi.cast("CArray *",lines_arr.ptr)
 
-# ----------------------------
-
+# ------------------------------------------------------------
+# Printing
+# ------------------------------------------------------------
 # lines = []
 # for i in range(lines_arr.size):
 #     print("\t",values[i].size)
@@ -112,6 +113,63 @@ values = ffi.cast("CArray *",lines_arr.ptr)
 
 # print(len(lines),len(lines[0]),len(lines[0][0]))
 
+# ------------------------------------------------------------
+# Classification
+# ------------------------------------------------------------
+# convert = lambda x: np.expand_dims(abs(np.reshape(np.array(x),(len(x),24,24)) - 1),-1)
+
+# np_lines = [convert(lines[i]) for i in range(len(lines))]
+# print(np_lines[0].shape)
+# print("\n\n\n",np_lines[0][0,:,:,0])
+
+# model = keras.Sequential([
+#         keras.Input(shape=(24,24, 1)),
+#         layers.Conv2D(32, (3, 3), padding='same', activation='relu'),
+#         layers.Dropout(0.2),
+    
+#         layers.Conv2D(32,(3,3),padding='same', activation='relu'),
+#         layers.MaxPooling2D(pool_size=(2,2)),
+    
+#         layers.Conv2D(64,(3,3),padding='same',activation='relu'),
+#         layers.Dropout(0.2),
+    
+#         layers.Conv2D(64,(3,3),padding='same',activation='relu'),
+#         layers.MaxPooling2D(pool_size=(2,2)),
+    
+#         layers.Conv2D(128,(3,3),padding='same',activation='relu'),
+#         layers.Dropout(0.2),
+
+#         layers.Conv2D(128,(3,3),padding='same',activation='relu'),
+#         layers.MaxPooling2D(pool_size=(2,2)),
+    
+#         layers.Flatten(),
+#         layers.Dropout(0.2),
+#         layers.Dense(2048,activation='relu'),
+#         layers.Dropout(0.2),
+#         layers.Dense(193, activation='softmax')
+# ])
+# model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+# BATCH_SIZE = 256
+# EPOCHS = 2
+# model.load_weights("./weights")
+
+# print(np_lines[0].shape)
+# pred = model.predict(np_lines[0])
+
+# print(pred.shape)
+# print(np.argmax(pred,axis=1))
+
+# trans_np_lines = np.transpose(np_lines[0],(0,2,1,3))
+
+# print(trans_np_lines.shape)
+# pred = model.predict(trans_np_lines)
+
+# print(pred.shape)
+# print(np.argmax(pred,axis=1))
+
+# ------------------------------------------------------------
+# Video
+# ------------------------------------------------------------
 # vid = cv2.VideoCapture(0)
 
 # while(True):

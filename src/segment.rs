@@ -178,6 +178,7 @@ pub extern "C" fn segment_buffer(
     //symbol_lines
 }
 
+#[allow(dead_code)]
 fn output_luma(pixels: &Vec<Vec<Pixel>>, name: &str) {
     let vec: Vec<u8> = pixels.iter().flatten().map(|p| p.luma).collect();
     let binary_image = ImageBuffer::<Luma<u8>, Vec<u8>>::from_raw(
@@ -190,6 +191,7 @@ fn output_luma(pixels: &Vec<Vec<Pixel>>, name: &str) {
         .save(format!("{}.png", name))
         .expect("Image saving failed");
 }
+#[allow(dead_code)]
 fn output_colour(pixels: &Vec<Vec<Pixel>>, name: &str) {
     let vec: Vec<u8> = pixels.iter().flatten().flat_map(|p| Vec::from(p)).collect();
     let image =

@@ -21,7 +21,7 @@ mod tests {
     fn base() {
         // Runs segmentation
         // -----------------
-        let string = String::from("tests/images/med_test.png");
+        let string = String::from("tests/images/2.jpg");
         println!("string:\t{}", string);
         let vec = string.clone().into_bytes();
         println!("vec:\t{:.?}", vec);
@@ -34,8 +34,11 @@ mod tests {
             field_reach: FIELD_REACH,
             field_size: FIELD_SIZE,
         });
+        let start = Instant::now();
         let rtn: *mut CReturn = segment_file(Box::into_raw(c_str), Box::into_raw(bin_params));
-        
+        println!("time: {}",time(start));
+        //println!("time: {}",start.elapsed().as)
+
         unsafe {
             let pixels: &CArray<u8> = &(*rtn).pixels;
 
