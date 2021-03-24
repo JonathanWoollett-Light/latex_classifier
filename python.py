@@ -19,7 +19,7 @@ from tensorflow.keras import layers
 # print("\n\n\n",np_lines[0][0,:,:,0])
 
 model = keras.Sequential([
-        keras.Input(shape=(24,24, 1),name="inputs"),
+        keras.Input(shape=(24,24, 1), name="inputs"),
         layers.Conv2D(32, (3, 3), padding='same', activation='relu'),
         layers.Dropout(0.2),
     
@@ -42,7 +42,7 @@ model = keras.Sequential([
         layers.Dropout(0.2),
         layers.Dense(2048,activation='relu'),
         layers.Dropout(0.2),
-        layers.Dense(193, activation='softmax',name="outputs")
+        layers.Dense(193, activation='softmax', name="outputs")
 ])
 # model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
 

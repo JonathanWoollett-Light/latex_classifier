@@ -7,7 +7,7 @@ mod tests {
     use std::{fs, path::Path, time::Instant, usize};
 
     use image::{ImageBuffer, Luma, Rgb};
-
+    use ndarray::Array;
     const DIF_SCALE: f64 = 0.2;
 
     // Best binarization parameters
@@ -39,6 +39,7 @@ mod tests {
         println!("time: {}",time(start));
         //println!("time: {}",start.elapsed().as)
 
+        // Output debug image
         unsafe {
             let pixels: &CArray<u8> = &(*rtn).pixels;
 
@@ -52,7 +53,9 @@ mod tests {
             image.save("test_image.png").expect("Image saving failed");
         }
         
+        // assert!(false);
 
+        // Iterate over symbols
         unsafe {
             let segment: &CArray<CArray<SymbolPixels>> = &(*rtn).symbols;
             println!("segment: {:.?}", (segment));
@@ -62,8 +65,16 @@ mod tests {
                 let line = std::slice::from_raw_parts(l.ptr, l.size);
                 for s in line.iter() {
                     println!("\t\t{:.?}", s);
+                    let line = std::slice::from_raw_parts(s.pixels.ptr, s.pixels.size);
+                    //let ndarray_arr = Array::from_shape_vec((24,24),line.to_vec()).expect("ndarray error");
+                    for y in (0..24) {
+                        for x in (0..24) {
+                            if line[y*24+x] == 1 { print!("-"); } else { print!("*"); }
+                        }
+                        println!();
+                    }
+                    //println!("{:#.}",ndarray_arr);
                 }
-                
             }
         }
 

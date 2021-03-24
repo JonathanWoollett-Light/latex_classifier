@@ -24,31 +24,9 @@ pub extern "C" fn segment_buffer(
 ) -> *mut CReturn {
     let img_slice = unsafe { std::slice::from_raw_parts((*img_raw).ptr, (*img_raw).size) };
 
-    // print!("[ ");
-    // for i in 0..20 {
-    //     print!("{} ",img_slice[i]);
-    // }
-    // println!("]");
-
     let safe_bin_parameters = unsafe { &*bin_parameters };
 
     let mut img_vec = from_buffer(img_slice, (i_size, j_size));
-
-    // println!("img_vec: {}*{}:",img_vec.len(),img_vec[0].len());
-    // println!("{}*{}:",img_vec.len(),img_vec[0].len());
-    // for r in img_vec.iter() {
-    //     for p in r.iter() {
-    //         match p.luma {
-    //             255 => print!("."),
-    //             0 => print!("X"),
-    //             _ => print!("?")
-    //         }
-    //     }
-    //     println!();
-    // }
-    // println!();
-
-    // panic!("stop here");
 
     #[cfg(debug_assertions)]
     let start = Instant::now();
@@ -64,89 +42,40 @@ pub extern "C" fn segment_buffer(
         safe_bin_parameters.field_size,
     );
 
-    // output_luma(&img_vec, "binary_image");   
-
-    // println!("binary_pixels: {}*{}:",binary_pixels.len(),binary_pixels[0].len());
-    // for r in binary_pixels.iter() {
-    //     for p in r.iter() {
-    //         match p {
-    //             BinaryPixel::White => print!("."),
-    //             BinaryPixel::Black => print!("x"),
-    //             _ => print!("?")
-    //         }
-    //     }
-    //     println!();
-    // }
-    // println!();
-
-    //panic!("got here");
+    #[cfg(debug_assertions)]
+    output_luma(&img_vec, "binary_image");
 
     // Gets lists of pixels belonging to each symbol
     // O(nm)
     let pixel_lists: Vec<Vec<(usize, usize)>> = get_pixel_groups_buffer(binary_pixels);
 
-    // println!("pixel_lists: {}", pixel_lists.len());
+    #[cfg(debug_assertions)]
+    println!("pixel_lists.len(): {}", pixel_lists.len());
 
     // Gets bounds, square bounds and square bounds scaling property for each symbol
     let bounds: Vec<(Bound<usize>, (Bound<i32>, i32))> = get_bounds(&pixel_lists);
-
-    // println!("bounds: {}", bounds.len());
-    // println!("\t{:.?}", bounds[0].0);
-    // println!("\t{:.?}", bounds[1].0);
-    // println!("\t{:.?}", bounds[0].1);
-    // println!("\t{:.?}", bounds[1].1);
-
     write_bounds(&bounds, &mut img_vec, [0, 255, 0], Some([255, 0, 0]));
 
-    // println!("{}*{}:",img_vec.len(),img_vec[0].len());
-    // for r in img_vec.iter() {
-    //     for p in r.iter() {
-    //         if p.r == 255 && p.g==0 && p.b==0 { print!("|"); continue; }
-    //         match p.luma {
-    //             255 => print!("."),
-    //             0 => print!("X"),
-    //             _ => print!("?")
-    //         }
-    //     }
-    //     println!();
-    // }
-    // println!();
-
-    //panic!("got here");
-
-    // output_colour(&img_vec, "border_image");
+    #[cfg(debug_assertions)]
+    output_colour(&img_vec, "border_image");
 
     // Gets lines in-between bounds
     let lines: Vec<Line> = get_lines(bounds.iter().map(|b| &b.0).collect(), i_size);
-
-    // println!("lines: {:.?}",lines);
-
     write_lines(&lines, &mut img_vec, [0, 0, 255], Some(20));
 
-    // println!("{}*{}:",img_vec.len(),img_vec[0].len());
-    // for r in img_vec.iter() {
-    //     for p in r.iter() {
-    //         if p.r == 0 && p.g==255 && p.b==0 { print!("|"); continue; }
-    //         match p.luma {
-    //             255 => print!("."),
-    //             0 => print!("X"),
-    //             _ => print!("?")
-    //         }
-    //     }
-    //     println!();
-    // }
-    // println!();
-
-    // output_colour(&img_vec, "line_image");
-
-    // panic!("stop here");
-
+    #[cfg(debug_assertions)]
+    output_colour(&img_vec, "line_image");
+    
     // Gets scaled pixels belonging to each symbol
     let symbols: Vec<Vec<u8>> = get_symbols(&pixel_lists, &bounds);
+
+    // print_symbols(&symbols);
 
     let symbol_lines: Vec<Vec<(Vec<u8>, Bound<usize>)>> =
         split_symbols_by_lines(symbols, bounds.into_iter().map(|(b, _)| b).collect(), lines);
 
+    // print_lines(&symbol_lines);
+    
     #[cfg(debug_assertions)]
     println!("{} : Finished segmentation", time(start));
 
@@ -200,6 +129,42 @@ fn output_colour(pixels: &Vec<Vec<Pixel>>, name: &str) {
     image
         .save(format!("{}.png", name))
         .expect("Image saving failed");
+}
+#[allow(dead_code)]
+fn print_lines(lines: &Vec<Vec<(Vec<u8>, Bound<usize>)>>) {
+    println!("---------------------------------------------");
+    println!("Lines:");
+    println!("---------------------------------------------");
+    for l in lines.iter() {
+        println!("Line:");
+        for s in l.iter() {
+            println!();
+            //let ndarray_arr = Array::from_shape_vec((24,24),line.to_vec()).expect("ndarray error");
+            print_symbol(&s.0);
+        }
+    }
+    println!("---------------------------------------------");
+}
+#[allow(dead_code)]
+fn print_symbols(symbols: &Vec<Vec<u8>>) {
+    println!("---------------------------------------------");
+    println!("Symbols:");
+    println!("---------------------------------------------");
+    for s in symbols.iter() {
+        println!();
+        print_symbol(s);
+    }
+    println!("---------------------------------------------");
+}
+#[allow(dead_code)]
+fn print_symbol(symbol: &Vec<u8>) {
+    for y in 0..24 {
+        for x in 0..24 {
+            //print!("{} ",s[y*24+x]);
+            if symbol[y*24+x] == 1 { print!("-"); } else { print!("*"); }
+        }
+        println!();
+    }
 }
 
 // Returns symbol images and bounds
@@ -666,8 +631,12 @@ pub fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bo
         let bound = Bound::from((lower_i, lower_j, upper_i, upper_j));
         //println!("bound: {:.?}",bound);
         bounds.push(bound);
-        sqr_bounds.push(square_indxs(lower_i, lower_j, upper_i, upper_j));
+        let sqr_bound = square_indxs(lower_i, lower_j, upper_i, upper_j);
+        println!("sqr bound: {:.?}",sqr_bound);
+        
+        sqr_bounds.push(sqr_bound);
     }
+    // panic!("are we allowed to panic?");
 
     #[cfg(debug_assertions)]
     println!("{} : Bounds set", time(start));
@@ -681,30 +650,27 @@ pub fn get_bounds(pixel_lists: &[Vec<(usize, usize)>]) -> Vec<(Bound<usize>, (Bo
         upper_i: usize,
         upper_j: usize,
     ) -> (Bound<i32>, i32) {
-        let (i_size, j_size) = (upper_i - lower_i, upper_j - lower_j);
+        #[cfg(debug_assertions)]
+        assert!(upper_i > lower_i && upper_j  > lower_j);
 
+        let (i_size, j_size) = (upper_i - lower_i, upper_j - lower_j);
+        
         let dif: i32 = i_size as i32 - j_size as i32;
-        let dif_by_2 = dif / 2;
-        // If j_size > i_size
-        if dif > 0 {
-            (
-                Bound::from((
-                    lower_i as i32, lower_j as i32 - dif_by_2,
-                    upper_i as i32, upper_j as i32 + dif_by_2
-                )),
-                dif_by_2,
-            )
-        }
-        // If j_size < i_size (if 0 has no affect)
-        else {
-            (
-                Bound::from((
-                    lower_i as i32 + dif_by_2, lower_j as i32,
-                    upper_i as i32 - dif_by_2, upper_j as i32
-                )),
-                dif_by_2,
-            )
-        }
+        let dif_2: f32 = dif as f32 / 2.;
+
+        let dif_f = dif_2.floor() as i32;
+        let dif_c = dif_2.ceil() as i32;
+        let sqr_bound = Bound::from(( 
+            cmp::min(lower_i as i32,lower_i as i32 + dif_f),
+            cmp::min(lower_j as i32,lower_j as i32 - dif_f),
+            cmp::max(upper_i as i32,upper_i as i32 - dif_c),
+            cmp::max(upper_j as i32,upper_j as i32 + dif_c)
+        ));
+
+        #[cfg(debug_assertions)]
+        assert!(sqr_bound.max.i - sqr_bound.min.i == sqr_bound.max.j - sqr_bound.min.j);
+
+        return (sqr_bound,dif_2 as i32);
     }
 }
 
@@ -808,6 +774,14 @@ pub fn get_symbols(
             // Sets pixel in symbol image list
             symbol[scaled_i - bound.min.i][scaled_j - bound.min.j] = 0u8;
         }
+
+        // println!("Raw symbol ({}*{}):",i_size,j_size);
+        // for i in (0..i_size) {
+        //     for j in (0..j_size) {
+        //         if symbol[i][j]==255 { print!("-"); } else { print!("*"); }
+        //     }
+        //     println!();
+        // }
 
         // Constructs image buffer from symbol vector
         let symbol_image = ImageBuffer::<Luma<u8>, Vec<u8>>::from_raw(
