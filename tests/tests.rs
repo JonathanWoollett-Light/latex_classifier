@@ -67,8 +67,8 @@ mod tests {
                     println!("\t\t{:.?}", s);
                     let line = std::slice::from_raw_parts(s.pixels.ptr, s.pixels.size);
                     //let ndarray_arr = Array::from_shape_vec((24,24),line.to_vec()).expect("ndarray error");
-                    for y in (0..24) {
-                        for x in (0..24) {
+                    for y in 0..24 {
+                        for x in 0..24 {
                             if line[y*24+x] == 1 { print!("-"); } else { print!("*"); }
                         }
                         println!();

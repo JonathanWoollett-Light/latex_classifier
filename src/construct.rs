@@ -1,46 +1,30 @@
 use crate::models::*;
 
-use std::usize;
+use std::{
+    ops::{Sub, SubAssign},
+    usize,
+    fmt::{Debug,Display, Formatter ,Result},
+    rc::Rc,cell::RefCell,
+    collections::VecDeque
+};
+use phf::phf_set;
 
 #[cfg(debug_assertions)]
 use crate::util::time;
 #[cfg(debug_assertions)]
 use std::time::Instant;
 
-const ROW_CLEARANCE: f32 = 0.3f32;
+const ROW_CLEARANCE: f32 = 0.3;
+const EQUAL_CLEARANCE: f32 = 0.2;
+
+// Symbols to ignore when calculating the average row heights
+static IGNORE_SYMBOLS_ROW_HEIGHTS: phf::Set<&'static str> = phf_set! {
+    "-","\\cdot"
+};
 
 // O(n^2 + 7n + 2n*log(n)) => O(n^2)
 // n = number of symbols
 pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
-    // Struct for symbol
-    #[derive(Clone, Debug)]
-    struct Symbol {
-        class: String,
-        bounds: Bound<usize>,
-    }
-    // Struct for row
-    #[derive(Debug)]
-    struct Row {
-        center: usize,
-        height: usize,
-        sum: usize,
-        symbols: Vec<Symbol>,
-        superscript: Option<*mut Row>,
-        subscript: Option<*mut Row>,
-        parent: Option<*mut Row>,
-    }
-    #[cfg(debug_assertions)]
-    impl Row {
-        fn print_symbols(&self) -> String {
-            format!(
-                "[{}]",
-                self.symbols
-                    .iter()
-                    .map(|s| format!("{} ", s.class))
-                    .collect::<String>()
-            )
-        }
-    }
     #[cfg(debug_assertions)]
     let start = Instant::now();
 
@@ -57,67 +41,46 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
 
     // Sorts symbols by min x bound, ordering symbols horizontally
     // O(n log n)
-    combined.sort_by_key(|a| ((a.bounds).min).x);
+    combined.sort_by_key(|a| ((a.bounds).min).j);
 
     // min x and y out of all symbols
-    let min_x: usize = combined[0].bounds.min.x; // O(1)
-                                                 // O(n)
-    let min_y: usize = bounds
+    // O(1) - Min x
+    let min_j: usize = combined[0].bounds.min.j;
+    // O(n) - Min y
+    let min_i: usize = bounds
         .iter()
-        .min_by_key(|b| b.min.y)
+        .min_by_key(|b| b.min.i)
         .expect("Bounds empty")
         .min
-        .y;
+        .i;
 
-    let origin = Point { x: min_x, y: min_y };
+    let origin = Point { i: min_i, j: min_j };
 
     // Subtract mins (`origin`) from bounds of all symbols
     // O(n)
-    for row in combined.iter_mut() {
-        row.bounds -= origin;
+    // TODO Which approach is better here?
+    // let combined = combined.into_iter().map(|s| s - origin).collect();
+    for symbol in combined.iter_mut() {
+        *symbol -= origin;
     }
 
-    // Calculates center y coordinate of each symbol
-    // O(n)
-    let y_centers: Vec<usize> = combined.iter().map(|s| s.bounds.y_center()).collect();
-
     // Initializes rows, 1st row containing 1st symbol
-    let mut rows: Vec<Row> = vec![Row {
-        center: y_centers[0],
-        height: usize::default(),
-        sum: y_centers[0],
-        symbols: vec![combined[0].clone()],
-        superscript: None,
-        subscript: None,
-        parent: None,
-    }];
+    let mut rows: Vec<Row> = vec![Row::new(combined.remove(0))];
 
     // Iterates across symbols and their centers (skipping 1st)
     // O(n^2 / 2)
-    for (y_center, symbol) in y_centers.into_iter().zip(combined.into_iter()).skip(1) {
-        let mut new_row = true;
+    for symbol in combined.into_iter() {
+        let i_center = symbol.center().i;
+
         // Iterate through existing rows checking if this symbols belongs to one
-        for row in rows.iter_mut() {
-            // If center of symbol is less than x% different, then it belongs to row. (x=100*ROW_CLEARANCE)
-            if (1f32 - (y_center as f32 / row.center as f32)).abs() < ROW_CLEARANCE {
-                row.symbols.push(symbol.clone());
-                row.sum += y_center;
-                row.center = row.sum / row.symbols.len();
-                new_row = false; // Identifies a new row is not needed to contain said symbol
-                break;
-            }
+        let found_row = rows.iter().enumerate().find(|(_,r)| r.percentage_difference(i_center) < ROW_CLEARANCE);
+        // If belongs to row, push to that row
+        if let Some((i,_)) = found_row {
+            rows[i].push(symbol,i_center);
         }
-        // If symbol not put in existing row, create a new one.
-        if new_row {
-            rows.push(Row {
-                center: y_center,
-                height: usize::default(),
-                sum: y_center,
-                symbols: vec![symbol.clone()],
-                superscript: None,
-                subscript: None,
-                parent: None,
-            });
+        // If doesn't belong to any row, push to new row
+        else {
+            rows.push(Row::new(symbol));
         }
     }
 
@@ -126,324 +89,395 @@ pub fn construct(classes: &[&str], bounds: &[Bound<usize>]) -> String {
     {
         println!("rows (base):");
         for (indx, row) in rows.iter().enumerate() {
-            println!("\t{} : {}", indx, row.print_symbols());
+            println!("\t{}: {}", indx, row);
         }
     }
 
     // Construct composite symbols
     // O(n)
-    for row in rows.iter_mut() {
-        let mut i = 0usize;
-        // Can't use for loop since we use `.remove()` in loop (TODO Double check this)
-        while i < row.symbols.len() {
-            if row.symbols[i].class == "-" && i + 1 < row.symbols.len() {
-                if row.symbols[i + 1].class == "-" {
-                    // If difference between min x's is less than 20%
-                    if (1f32
-                        - row.symbols[i].bounds.min.x as f32
-                            / row.symbols[i + 1].bounds.min.x as f32)
-                        .abs()
-                        <= 0.2f32
-                    {
-                        // Sets new symbol
-                        row.symbols[i].class = "=".to_string(); // `=`
-                                                                // Sets bounds
-                        row.symbols[i].bounds =
-                            Bound::from(&vec![&row.symbols[i].bounds, &row.symbols[i + 1].bounds]); // TODO How could I use slices here?
-                                                                                                    // Removes component part
-                        row.symbols.remove(i + 1);
-                    }
-                } else if i + 2 < row.symbols.len() {
-                    // If `row.symbols[i+1]` and `row.symbols[i+2]` are contained within `row.symbols[i]`
-                    if row.symbols[i + 1].class == "\\cdot "
-                        && row.symbols[i + 2].class == "\\cdot "
-                        && row.symbols[i]
-                            .bounds
-                            .contains_x(&[&row.symbols[i + 1].bounds, &row.symbols[i + 2].bounds])
-                    {
-                        // Sets new symbol
-                        row.symbols[i].class = "\\div ".to_string(); // `\div`
-
-                        // Calculate y bounds (which "." is on top and which is on bottom)
-                        let (min_y, max_y) =
-                            if row.symbols[i + 1].bounds.min.y < row.symbols[i + 2].bounds.min.y {
-                                (
-                                    row.symbols[i + 1].bounds.min.y,
-                                    row.symbols[i + 2].bounds.max.y,
-                                )
-                            } else {
-                                (
-                                    row.symbols[i + 2].bounds.min.y,
-                                    row.symbols[i + 1].bounds.max.y,
-                                )
-                            };
-                        // Sets bounds
-                        row.symbols[i].bounds = Bound {
-                            min: Point {
-                                x: row.symbols[i + 1].bounds.min.x,
-                                y: min_y,
-                            },
-                            max: Point {
-                                x: row.symbols[i + 1].bounds.max.x,
-                                y: max_y,
-                            },
-                        };
-                        // Removes component part
-                        row.symbols.remove(i + 1);
-                        row.symbols.remove(i + 1); // After first remove now i+1 == prev i+2
-                    }
-                }
-            }
-            i += 1;
-        }
-    }
+    compose_symbols(&mut rows);
 
     // Prints symbols in rows
     #[cfg(debug_assertions)]
     {
-        println!("rows (combined symbols):");
+        println!("rows (combined):");
         for (indx, row) in rows.iter().enumerate() {
-            println!("\t{} : {}", indx, row.print_symbols());
+            println!("\t{}: {}", indx, row);
         }
     }
-    // Sorts rows in vertical order rows[0] is top row
+
+    // Sorts rows in descending vertical order (row[0] spatially top)
     // O(n log n)
     rows.sort_by_key(|r| r.center);
 
-    // Prints symbols in rows and row centers
+    // Prints symbols in rows
     #[cfg(debug_assertions)]
     {
-        println!("rows (vertically ordered):");
+        println!("rows (sorted):");
         for (indx, row) in rows.iter().enumerate() {
-            println!("\t{} : {}", indx, row.print_symbols());
+            println!("\t{}: {}", indx, row);
         }
-        let centers: Vec<usize> = rows.iter().map(|x| x.center).collect();
-        println!("row centers: {:.?}", centers);
     }
 
     // Calculates average height of rows
     // O(n)
     for row in rows.iter_mut() {
-        let mut ignored_symbols = 0usize;
-        for symbol in row.symbols.iter() {
-            // Ignore the heights of '-' and '\\cdot' since there minuscule heights will throw off the average
-            match symbol.class.as_str() {
-                "-" | "\\cdot" => ignored_symbols += 1,
-                _ => row.height += symbol.bounds.max.y - symbol.bounds.min.y, // `symbol.bounds.1.y - symbol.bounds.0.y` = height of symbol
-            }
-        }
-        // Average height in row
-        if row.symbols.len() != ignored_symbols {
-            row.height /= row.symbols.len() - ignored_symbols;
-        }
+        row.set_height();
     }
 
     // Prints average row heights
     #[cfg(debug_assertions)]
     println!(
         "row heights: {:.?}",
-        rows.iter().map(|x| x.height).collect::<Vec<usize>>()
+        rows.iter().map(|r| r.height).collect::<Vec<usize>>()
     );
-
-    // Contains references to rows not linked to another row as a sub/super script row
-    // Initially contains a reference to every row.
-    let mut unassigned_rows: Vec<&mut Row> = rows.iter_mut().collect();
-
-    // Only 1 row is not a sub/super script row of another.
-    // When we only have 1 unreferenced row we know we have linked all other rows as sub/super scripts.
-    // O(n^2/2)
-    while unassigned_rows.len() > 1 {
-        // List of indexes in reference to rows to remove from unassigned_rows as they have been assigned
-        let mut removal_list: Vec<usize> = Vec::new();
-        for i in 0..unassigned_rows.len() {
-            let mut pos_sub = false; // Defines if this row could be a subscript row.
-            if i > 0 {
-                // If there is a row above this.
-                // If the height of the row above is more than this, this could be a subscript to the row below
-                if unassigned_rows[i - 1].height > unassigned_rows[i].height {
-                    pos_sub = true;
-                }
-            }
-
-            let mut pos_sup = false; // Defines if this row could be a superscript row.
-            if i < unassigned_rows.len() - 1 {
-                // If there is a row below this.
-                // If the height of the row below is more than this, this could be a superscrit to the row below.
-                if unassigned_rows[i + 1].height > unassigned_rows[i].height {
-                    pos_sup = true;
-                }
-            }
-
-            // Gets mutable raw pointer to this row
-            let pointer: *mut Row = *unassigned_rows.get_mut(i).unwrap() as *mut Row;
-            // If could both be superscript and subscript.
-            // This row is a sub/super script to the row with smallest height
-            if pos_sup && pos_sub {
-                // If row below is smaller than row above, this row is a superscript to row below
-                if unassigned_rows[i + 1].height < unassigned_rows[i - 1].height {
-                    unassigned_rows[i + 1].superscript = Some(pointer); // Links parent to this as subscript
-                    unassigned_rows[i].parent =
-                        Some(*unassigned_rows.get_mut(i + 1).unwrap() as *mut Row); // Links to parent
-                    removal_list.push(i);
-                }
-                // Else it is the subscript to the row above
-                else {
-                    unassigned_rows[i - 1].subscript = Some(pointer); // Links parent to this as superscript
-                    unassigned_rows[i].parent =
-                        Some(*unassigned_rows.get_mut(i - 1).unwrap() as *mut Row); // Links to parent
-                    removal_list.push(i);
-                }
-            }
-            // If could only be superscript
-            else if pos_sub {
-                unassigned_rows[i - 1].subscript = Some(pointer); // Links parent to this as superscript
-                unassigned_rows[i].parent =
-                    Some(*unassigned_rows.get_mut(i - 1).unwrap() as *mut Row); // Links to parent
-                removal_list.push(i);
-            }
-            // If could only be subscript
-            else if pos_sup {
-                unassigned_rows[i + 1].superscript = Some(pointer); // Links parent to this as subscript
-                unassigned_rows[i].parent =
-                    Some(*unassigned_rows.get_mut(i + 1).unwrap() as *mut Row); // Links to parent
-                removal_list.push(i);
-            }
-        }
-        // Removes assigned rows from `unassigned_rows`
-        remove_indexes(&mut unassigned_rows, &removal_list);
-    }
-    //println!("finished script setting");
-
-    // Prints rows and linked rows (doesn't use `debug_out` since output is large, complex and interferes with later code. Not good for an overview)
-    // unsafe {
-    //     println!("\nrows:");
-    //     for row in rows.iter() {
-    //         println!();
-    //         println!("{:.?}",row.print_symbols());
-    //         if let Some(pointer) = row.subscript {
-    //             println!("sub: {:.?} -> {:.?}",pointer,(*pointer).print_symbols())
-    //         }
-    //         if let Some(pointer) = row.superscript {
-    //             println!("sup: {:.?} -> {:.?}",pointer,(*pointer).print_symbols())
-    //         }
-    //     }
-    // }
-    // return "".to_string();
 
     #[cfg(debug_assertions)]
     println!("{} : Scripts set", time(start));
 
-    // The last remaining row in `unassigned_rows` must be the base row.
+    // Set current row to base row (the row which is not a subscript or superscript of another)
+    let base_row = script_rows(rows);
 
-    // Sets 1st row
-    let mut current_row: &mut Row = unassigned_rows.get_mut(0).unwrap();
+    #[cfg(debug_assertions)]
+    println!("base row: {:.?}",base_row);
+
     // Sets 1st symbol in latex
-    let mut latex: String = current_row.symbols[0].class.clone();
-    // Removes set symbol from row
-    current_row.symbols.remove(0);
-    // O(n)
-    unsafe {
-        loop {
-            #[cfg(debug_assertions)]
-            println!("building: {}", latex);
-
-            // TODO Make `min_sub` and `min_sup` immutable
-            // Gets min x coordinate of next symbol in possible rows.
-            //----------
-            // Gets min x bound of symbol in subscript row
-            let mut min_sub: usize = usize::max_value();
-            if let Some(sub_row) = current_row.subscript {
-                if let Some(symbol) = (*sub_row).symbols.first() {
-                    min_sub = symbol.bounds.min.x;
-                }
-            }
-            // Gets min x bound of symbol in superscript row
-            let mut min_sup: usize = usize::max_value();
-            if let Some(sup_row) = current_row.superscript {
-                if let Some(symbol) = (*sup_row).symbols.first() {
-                    min_sup = symbol.bounds.min.x;
-                }
-            }
-            // Gets min x bound of next symbol in current row
-            let min_cur: usize = if let Some(symbol) = current_row.symbols.get(0) {
-                symbol.bounds.min.x
-            } else {
-                usize::max_value()
-            };
-
-            // Gets min x bounds of symbol in parent row
-            let mut min_par: usize = usize::max_value();
-            if let Some(parent) = current_row.parent {
-                if let Some(symbol) = (*parent).symbols.first() {
-                    min_par = symbol.bounds.min.x;
-                }
-            }
-
-            //println!("(sub,sup,cur,par):({},{},{},{})",min_sub,min_sup,min_cur,min_par);
-
-            // Finds minimum min x coordinate of next symbol in possible rows,
-            //  switches to that row, appeneds that symbol to `latex` and removes that symbol from its row.
-            //----------
-            // ('closest' in this section means horizontally closest)
-            if let Some(min) = min_option(&[min_sub, min_sup, min_cur, min_par]) {
-                // If next closest symbol resides in the parent row, close this row and swtich to the parent row.
-                if min == min_par {
-                    current_row = &mut *current_row.parent.unwrap();
-                    latex.push('}');
-                }
-                // If next closest symbol does not resides in the parent row
-                else {
-                    // If next closest symbol resides in subscript row, open subscript row, push 1st symbol and switch row.
-                    if min == min_sub {
-                        current_row = &mut *current_row.subscript.unwrap();
-                        latex.push_str(&format!("_{{{}", current_row.symbols[0].class));
-                    }
-                    // If next closest symbol resides in superscript row, open subscript row, push 1st symbol and switch row.
-                    else if min == min_sup {
-                        current_row = &mut *current_row.superscript.unwrap();
-                        latex.push_str(&format!("^{{{}", current_row.symbols[0].class));
-                    }
-                    // If next closest symbol resides in current row, push next symbol in current row.
-                    else if min == min_cur {
-                        latex.push_str(&current_row.symbols[0].class);
-                    }
-                    // Remove symbol added to latex
-                    current_row.symbols.remove(0);
-                }
-            }
-            // If next closest symbol not in parent, current, subscript or superscript row,
-            else {
-                // If there exists a parent row, close row and switch to parent row.
-                if let Some(parent) = current_row.parent {
-                    current_row = &mut *parent;
-                    latex.push('}');
-                }
-                // If there does not exist a parent row, we are in the base row and at the end of the equation.
-                else {
-                    break;
-                }
-            }
-        }
-    }
+    let mut latex: String = base_row.borrow_mut().symbols.pop_front().unwrap().class;
+    latex.push_str(&traverse_scripts(base_row));
 
     #[cfg(debug_assertions)]
     println!("{} : Construction finished", time(start));
 
     return latex;
+}
+// O(n log n + n log n + n^2) -> O(n^2)
+// n = number of rows
+fn script_rows(rows: Vec<Row>) -> Rc<RefCell<Row>> {
+    let mut lines: Vec<Rc<RefCell<Row>>> = rows.into_iter().map(|r|Rc::new(RefCell::new(r))).collect();
+    lines.sort_by_key(|l|l.borrow().center);
 
-    // Returns some minimum from 4 element array, unless minium equals usize::max_value() then return none.
-    fn min_option(slice: &[usize; 4]) -> Option<usize> {
-        let min = *slice.iter().min().unwrap();
-        if min == usize::max_value() {
-            return None;
+    let mut line_stack: Vec<(usize,usize)> = lines.iter().enumerate().map(|(i,l)|(i,l.borrow().height)).collect();
+    line_stack.sort_by_key(|(_,h)| *h );
+    let base = Rc::clone(&lines[line_stack.last().unwrap().0]);
+
+    // TODO the way we don't remove used entries but simply filter them is inefficient,
+    //  a more efficient solution would not require filtering if a row is larger or assigned,
+    //  we would simply remove such rows from the search space as the function progresses,
+    //  this is fairly tricky, and I'm not sure how to do it, so for now this is why it
+    //  hasn't been done, and tbf the maximum is like n=20, so O(n^2) kinda fine.
+    while let Some((index,_)) = line_stack.pop() {
+        let line_height = lines[index].borrow().height;
+
+        // Lines below (lines.len()-1 is min height)
+        if let Some(high_index) = (index+1..lines.len())
+            .filter(|i| lines[*i].borrow().parent.is_none() && lines[*i].borrow().height < line_height)
+            .max_by_key(|i| lines[*i].borrow().height)
+        {
+            lines[index].borrow_mut().subscript = Some(Rc::clone(&lines[high_index]));
+            lines[high_index].borrow_mut().parent = Some(Rc::clone(&lines[index]));
         }
-        Some(min)
+        
+
+        // Lines above (0 max height)
+        if index > 0 {
+            if let Some(low_index) = (0..index)
+                .filter(|i| lines[*i].borrow().parent.is_none() && lines[*i].borrow().height < line_height)
+                .max_by_key(|i| lines[*i].borrow().height)
+            {
+                lines[index].borrow_mut().superscript = Some(Rc::clone(&lines[low_index]));
+                lines[low_index].borrow_mut().parent = Some(Rc::clone(&lines[index]));
+            }
+        }   
+    }
+    base
+}
+
+fn percentage_difference(a:usize,b:usize) -> f32 {
+    (a as f32 - b as f32).abs() / (((a+b) as f32) / 2.)
+}
+
+// Construct composite symbols
+// O(n)
+fn compose_symbols(rows: &mut Vec<Row>) {
+    for row in rows.iter_mut() {
+        let mut offset = 0;
+        for i in 0..row.symbols.len() {
+            let indx = i - offset;
+            // If current symbol is "-" and this is not the last symbol
+            if row.symbols[indx].class == "-" && indx < row.symbols.len() - 1 {
+                // = route
+                // If next symbol is "-" and min j's are close (within a percentage difference)
+                if row.symbols[indx+1].class == "-" && 
+                    percentage_difference(row.symbols[indx].bounds.min.j,row.symbols[indx + 1].bounds.min.j) < EQUAL_CLEARANCE
+                {
+                    row.symbols[indx].class = "=".to_string();
+                    // Adds bounds, such that `row.symbols[i].bounds` covers both
+                    let b = row.symbols[indx + 1].bounds; // This line neccessary to satisfy dumb borrow checker
+                    row.symbols[indx].bounds += b;
+                    // Remove component symbol
+                    row.symbols.remove(indx + 1);
+                    // Increment offset
+                    offset += 1;
+                }
+                // /div route
+                // If there are 2 following elements
+                else if indx < row.symbols.len() - 2 {
+                    // If both of the 2 following elements are \cdot and within the j bounds of the current - element
+                    if row.symbols[indx + 1].class == "\\cdot" && 
+                        row.symbols[indx + 2].class == "\\cdot" &&
+                        row.symbols[indx].bounds.contains_j(&[&row.symbols[indx].bounds, &row.symbols[indx + 1].bounds]) 
+                    {
+                        row.symbols[indx].class = "\\div".to_string();
+                        // Adds bounds, such that `row.symbols[i].bounds` covers all symbols
+                        let b1 = row.symbols[indx + 1].bounds; // This line neccessary to satisfy dumb borrow checker
+                        let b2 = row.symbols[indx + 2].bounds; // This line neccessary to satisfy dumb borrow checker
+                        row.symbols[indx].bounds += b1 + b2;
+                        // Remove component symbols
+                        row.symbols.remove(indx + 1);
+                        row.symbols.remove(indx + 1);
+                        // Increment offset
+                        offset += 2;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// O(n)
+// n = total number of symbols across rows
+fn traverse_scripts(row: Rc<RefCell<Row>>) -> String {
+    let mut line = String::new();
+    // Switch to superscript row
+    { // This scope will constrain the lifetime of row_ref
+        let row_ref = row.borrow();
+        if let Some(superscript_row) = &row_ref.superscript {
+            let mut child = superscript_row.borrow_mut();
+            if let Some(superscript_symbol) = child.symbols.front() {
+                if let Some(current_row_symbol) = row_ref.symbols.front() {
+                    if superscript_symbol.before(current_row_symbol) {
+                        start(&mut line,"^{ ",superscript_symbol);
+                        child.symbols.pop_front();
+
+                        drop(child); // child is no longer needed, so drop it before recursing
+                        // Since superscript_row borrows from row_ref, we must Rc::clone it before
+                        // dropping row_ref so that we can still pass it to traverse_scripts.
+                        let superscript_row = Rc::clone(superscript_row);
+                        drop(row_ref); // row_ref is no longer needed, so drop it before recursing
+                        line.push_str(&traverse_scripts(superscript_row));
+                        
+                        end(&mut line);
+                        
+                    }
+                } else {
+                    start(&mut line,"^{ ",superscript_symbol);
+                    child.symbols.pop_front();
+
+                    drop(child);
+                    let superscript_row = Rc::clone(superscript_row);
+                    drop(row_ref);
+                    line.push_str(&traverse_scripts(superscript_row));
+                    
+                    end(&mut line);
+                }
+            }
+        } // child is dropped here (if it wasn't already). superscript_row is no longer borrowed
+    } // row_ref is dropped here (if it wasn't already). row is no longer borrowed
+
+    // Switch to subscript row
+    {
+        let row_ref = row.borrow();
+        if let Some(subscript_row) = &row_ref.subscript {
+            let mut child = subscript_row.borrow_mut();
+            if let Some(subscript_symbol) = child.symbols.front() {
+                if let Some(current_row_symbol) = row_ref.symbols.front() {
+                    if subscript_symbol.before(current_row_symbol) {
+                        start(&mut line,"_{ ",subscript_symbol);
+                        child.symbols.pop_front();
+
+                        drop(child);
+                        let subscript_row = Rc::clone(subscript_row);
+                        drop(row_ref);
+                        line.push_str(&traverse_scripts(subscript_row));
+                        
+                        end(&mut line);
+                    }
+                } else {
+                    start(&mut line,"_{ ",subscript_symbol);
+                    child.symbols.pop_front();
+
+                    drop(child);
+                    let subscript_row = Rc::clone(subscript_row);
+                    drop(row_ref);
+                    line.push_str(&traverse_scripts(subscript_row));
+
+                    end(&mut line);
+                }
+            }
+        }
     }
 
-    // Removes elements at given indices from given vector
-    fn remove_indexes<T>(vec: &mut Vec<T>, indxs: &[usize]) {
-        for (counter, indx) in indxs.iter().enumerate() {
-            vec.remove(*indx - counter);
+    // Iterate through row
+    {
+        let mut row_mut = row.borrow_mut();
+        if let Some(parent_row) = &row_mut.parent {
+            let parent_ref = parent_row.borrow();
+            if let Some(parent_symbol) = parent_ref.symbols.front() {
+                let parent_symbol = parent_symbol.clone();
+                drop(parent_ref);
+                while let Some(current_row_symbol) = row_mut.symbols.front() {
+                    // If next current row symbol is not before next parent symbol
+                    if !current_row_symbol.before(&parent_symbol) { break; }
+
+                    start(&mut line," ",current_row_symbol);
+                    row_mut.symbols.pop_front();
+                    
+                    drop(row_mut);
+                    
+                    line.push_str(&traverse_scripts(Rc::clone(&row)));
+                    row_mut =  row.borrow_mut();
+                }
+            } else {
+                drop(parent_ref);
+                while let Some(current_row_symbol) = row_mut.symbols.pop_front() {
+                    start(&mut line," ",&current_row_symbol);
+
+                    drop(row_mut);
+                    line.push_str(&traverse_scripts(Rc::clone(&row)));
+                    row_mut =  row.borrow_mut();
+                }
+            }
         }
+        else {
+            while let Some(current_row_symbol) = row_mut.symbols.pop_front() {
+                start(&mut line," ",&current_row_symbol);
+
+                drop(row_mut);
+                line.push_str(&traverse_scripts(Rc::clone(&row)));
+                row_mut =  row.borrow_mut();
+            }
+        }
+    }
+
+    // #[cfg(debug_assertions)]
+    // println!("\t{}",line);
+
+    return line;
+
+    fn start<T: std::fmt::Display>(line: &mut String, prefix: &str, char: &T) {
+        let start = format!("{}{}",prefix,char);
+        #[cfg(debug_assertions)]
+        print!("{}",start);
+        line.push_str(&start);
+    }
+
+    fn end(line: &mut String) {
+        let end = String::from(" }");
+        #[cfg(debug_assertions)]
+        print!("{}",end);
+        line.push_str(&end);
+    }
+}
+
+// Struct for symbol
+#[derive(Clone, Debug)]
+struct Symbol {
+    class: String,
+    bounds: Bound<usize>,
+}
+impl Symbol {
+    fn center(&self) -> Point<usize> {
+        self.bounds.center()
+    }
+    // i_size of bounds
+    fn height(&self) -> usize {
+        self.bounds.max.i - self.bounds.min.i
+    }
+    // if min.j of self is less than min.j of other (i,e. if self is before other on the x axis)
+    fn before(&self, other: &Symbol) -> bool {
+        self.bounds.min.j < other.bounds.min.j
+    } 
+}
+impl SubAssign<Point<usize>> for Symbol {
+    fn sub_assign(&mut self, other: Point<usize>) {
+        self.bounds -= other;
+    }
+}
+impl Sub<Point<usize>> for Symbol {
+    type Output = Self;
+    fn sub(self, other: Point<usize>) -> Self {
+        Self {
+            class: self.class,
+            bounds: self.bounds - other
+        }
+    }
+}
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f,"{}",self.class)
+    }
+}
+
+// Struct for row
+struct Row {
+    center: usize,
+    height: usize,
+    sum: usize,
+    symbols: VecDeque<Symbol>,
+    superscript: Option<Rc<RefCell<Row>>>,
+    subscript: Option<Rc<RefCell<Row>>>,
+    parent: Option<Rc<RefCell<Row>>>,
+}
+#[cfg(debug_assertions)]
+impl Row {
+    fn new(symbol: Symbol) -> Self {
+        let center = symbol.center().i;
+        Row {
+            center: center,
+            height: usize::default(),
+            sum: center,
+            symbols: VecDeque::from(vec![symbol]),
+            superscript: None,
+            subscript: None,
+            parent: None,
+        }
+    }
+    fn push(&mut self, symbol: Symbol, center: usize) {
+        self.symbols.push_back(symbol);
+        self.sum += center;
+        self.center = self.sum / self.symbols.len();
+    }
+    // Percentage difference between row center and given value
+    fn percentage_difference(&self, other: usize) -> f32 {
+        percentage_difference(self.center,other)
+    }
+    // Calculates height
+    fn set_height(&mut self) {
+        let set: Vec<usize> = self.symbols.iter().filter_map(|s| 
+            if IGNORE_SYMBOLS_ROW_HEIGHTS.contains(&s.class as &str) { None } else { Some(s.height()) }
+        ).collect();
+        self.height = set.iter().sum::<usize>() / set.len();
+    }
+}
+impl Display for Row {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let out = format!(
+            "[ {}]",
+            self.symbols
+                .iter()
+                .map(|s| format!("{} ", s.class))
+                .collect::<String>()
+        );
+        // let mut list: String = self.symbols.iter().map(|s| write!(f,"{}",s)).collect();
+        write!(f,"{}",out)
+    }
+}
+impl Debug for Row {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        f.debug_struct("Row")
+        .field("symbols",&self.height)
+        .field("superscript",&self.superscript)
+        .field("subscript",&self.subscript)   
+        .finish()
     }
 }

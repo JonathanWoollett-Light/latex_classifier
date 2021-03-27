@@ -1,25 +1,20 @@
 use num::FromPrimitive;
-use std::ops::{Add, Div, Sub, SubAssign};
-
+use std::ops::{Add, Div, Sub, SubAssign,AddAssign};
+use std::cmp;
 // Struct for 2d bound
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Bound<T: Ord + Copy> {
     pub min: Point<T>,
     pub max: Point<T>,
 }
-impl<T: Ord + Sub<Output = T> + Copy> SubAssign<Point<T>> for Bound<T> {
-    fn sub_assign(&mut self, other: Point<T>) {
-        *self = Self {
-            min: self.min - other,
-            max: self.max - other,
-        }
-    }
-}
 impl<T: Ord + Add<Output = T> + Div<Output = T> + Copy + FromPrimitive> Bound<T> {
-    pub fn i_center(&self) -> T {
-        (self.min.i + self.max.i) / FromPrimitive::from_usize(2usize).unwrap()
+    pub fn center(&self) -> Point<T> {
+        Point {
+            i: (self.min.i + self.max.i) / FromPrimitive::from_usize(2usize).unwrap(),
+            j: (self.min.j + self.max.j) / FromPrimitive::from_usize(2usize).unwrap()
+        }
     }
     // If x bounds of self contain all x bounds in `others`.
     pub fn contains_j(&self, others: &[&Bound<T>]) -> bool {
@@ -29,6 +24,41 @@ impl<T: Ord + Add<Output = T> + Div<Output = T> + Copy + FromPrimitive> Bound<T>
             }
         }
         true
+    }
+}
+impl<T: Ord + Sub<Output = T> + Copy> SubAssign<Point<T>> for Bound<T> {
+    fn sub_assign(&mut self, other: Point<T>) {
+        *self = Self {
+            min: self.min - other,
+            max: self.max - other,
+        }
+    }
+}
+impl<T: Ord + Sub<Output = T> + Copy> Sub<Point<T>> for Bound<T> {
+    type Output = Self;
+    fn sub(self, other: Point<T>) -> Self {
+        Self {
+            min: self.min - other,
+            max: self.max - other,
+        }
+    }
+}
+// Combines bounds producing bound which covers both
+impl<T: Ord + Add<Output = T> + Copy> Add<Bound<T>> for Bound<T> {
+    type Output = Self;
+    fn add(self, other: Bound<T>) -> Self {
+        Bound {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max)
+        }
+    }
+}
+impl<T: Ord + Add<Output = T> + Copy> AddAssign<Bound<T>> for Bound<T> {
+    fn add_assign(&mut self, other: Bound<T>) {
+        *self = Bound {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max)
+        }
     }
 }
 // Constructs bound around given bounds
@@ -62,9 +92,16 @@ pub struct Point<T: Ord> {
     pub i: T,
     pub j: T,
 }
-impl<T:Ord> Point<T> {
+impl<T: Ord + Copy> Point<T> {
     pub fn new(i:T,j:T) -> Self {
         Point { i, j }
+    }
+    // Of 2 given points get maximum point out of the 4 given indexes
+    fn max(&self, other: Point<T>) -> Point<T> {
+        Point { i: cmp::max(self.i,other.i), j: cmp::max(self.j,other.j) }
+    }
+    fn min(&self, other: Point<T>) -> Point<T> {
+        Point { i: cmp::min(self.i,other.i), j: cmp::min(self.j,other.j) }
     }
 }
 impl<T: Ord + Sub<Output = T>> Sub for Point<T> {

@@ -210,7 +210,7 @@ pub extern "C" fn segment_file(
     )
 }
 
-fn from_buffer(raw: &[u8], (i_size, j_size): (usize, usize)) -> Vec<Vec<Pixel>> {
+fn from_buffer(raw: &[u8], (_i_size, j_size): (usize, usize)) -> Vec<Vec<Pixel>> {
     // panic!("raw.len:{}",raw.len());
     let j_size_3 = 3 * j_size;
     // panic!("{}:{}",raw.len(), j_size * i_size_3);

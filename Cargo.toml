@@ -19,3 +19,6 @@ simplers_optimization = "0.4.2" # Optimising binarization
 
 # test prints
 ndarray = "0.14.0"
+
+# Static hashmap for checking symbols not used for calculating average row heights in cosntruction
+phf = { version = "0.8.0", features = ["macros"] }
